@@ -12,14 +12,12 @@ bool c_keys::InitKeyboard()
 		Winver = std::stoi(win);
 	else
 		return false;
-
 	std::string ubr = registry.QueryValue("HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\UBR", e_registry_type::dword);
 	int Ubr = 0;
 	if (!ubr.empty())
 		Ubr = std::stoi(ubr);
 	else
 		return false;
-
 	this->win_logon_pid = mem.GetPidFromName("winlogon.exe");
 	if (Winver > 22000)
 	{
@@ -27,8 +25,32 @@ bool c_keys::InitKeyboard()
 		for (size_t i = 0; i < pids.size(); i++)
 		{
 			auto pid = pids[i];
-			uintptr_t tmp = VMMDLL_ProcessGetModuleBaseU(mem.vHandle, pid, const_cast<LPSTR>("win32ksgd.sys"));
-			uintptr_t g_session_global_slots = tmp + 0x3110;
+
+			PVMMDLL_MAP_MODULEENTRY win32k_module_info;
+			if (!VMMDLL_Map_GetModuleFromNameW(mem.vHandle, pid, const_cast<LPWSTR>(L"win32ksgd.sys"), &win32k_module_info, VMMDLL_MODULE_FLAG_NORMAL))
+			{
+				if (!VMMDLL_Map_GetModuleFromNameW(mem.vHandle, pid, const_cast<LPWSTR>(L"win32k.sys"), &win32k_module_info, VMMDLL_MODULE_FLAG_NORMAL))
+				{
+					LOG("failed to get module win32k info\n");
+					return false;
+				}
+			}
+			uintptr_t win32k_base = win32k_module_info->vaBase;
+			size_t win32k_size = win32k_module_info->cbImageSize;
+			//win32ksgd
+			auto g_session_ptr = mem.FindSignature("48 8B 05 ? ? ? ? 48 8B 04 C8", win32k_base, win32k_base + win32k_size, pid);
+			if (!g_session_ptr)
+			{
+				//win32k
+				g_session_ptr = mem.FindSignature("48 8B 05 ? ? ? ? FF C9", win32k_base, win32k_base + win32k_size, pid);
+				if (!g_session_ptr)
+				{
+					LOG("failed to find g_session_global_slots\n");
+					return false;
+				}
+			}
+			int relative = mem.Read<int>(g_session_ptr + 3, pid);
+			uintptr_t g_session_global_slots = g_session_ptr + 7 + relative;
 			uintptr_t user_session_state = 0;
 			for (int i = 0; i < 4; i++)
 			{
@@ -37,12 +59,31 @@ bool c_keys::InitKeyboard()
 					break;
 			}
 
-			if (Winver >= 22631 && Ubr >= 3810)
-				gafAsyncKeyStateExport = user_session_state + 0x36A8;
+			PVMMDLL_MAP_MODULEENTRY win32kbase_module_info;
+			if (!VMMDLL_Map_GetModuleFromNameW(mem.vHandle, pid, const_cast<LPWSTR>(L"win32kbase.sys"), &win32kbase_module_info, VMMDLL_MODULE_FLAG_NORMAL))
+			{
+				LOG("failed to get module win32kbase info\n");
+				return false;
+			}
+			uintptr_t win32kbase_base = win32kbase_module_info->vaBase;
+			size_t win32kbase_size = win32kbase_module_info->cbImageSize;
+
+			//Unsure if this sig will work on all versions. (sig is from PostUpdateKeyStateEvent function. seems to exist in both older version and the new version of win32kbase that I have checked)
+			uintptr_t ptr = mem.FindSignature("48 8D 90 ? ? ? ? E8 ? ? ? ? 0F 57 C0", win32kbase_base, win32kbase_base + win32kbase_size, pid);
+			uint32_t session_offset = 0x0;
+			if (ptr)
+			{
+				session_offset = mem.Read<uint32_t>(ptr + 3, pid);
+				gafAsyncKeyStateExport = user_session_state + session_offset;
+
+			}
 			else
-				gafAsyncKeyStateExport = user_session_state + 0x3690;
-			if (gafAsyncKeyStateExport > 0x7FFFFFFFFFFF)
-				break;
+			{
+				LOG("failed to find offset for gafAyncKeyStateExport\n");
+				return false;
+			}
+
+			if (gafAsyncKeyStateExport > 0x7FFFFFFFFFFF) break;
 		}
 		if (gafAsyncKeyStateExport > 0x7FFFFFFFFFFF)
 			return true;
@@ -122,7 +163,7 @@ bool c_keys::IsKeyDown(uint32_t virtual_key_code)
 {
 	if (gafAsyncKeyStateExport < 0x7FFFFFFFFFFF)
 		return false;
-	if (std::chrono::system_clock::now() - start > std::chrono::milliseconds(1))
+	if (std::chrono::system_clock::now() - start > std::chrono::milliseconds(100))
 	{
 		UpdateKeys();
 		start = std::chrono::system_clock::now();

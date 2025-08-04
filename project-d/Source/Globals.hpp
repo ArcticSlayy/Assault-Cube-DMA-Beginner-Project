@@ -1,7 +1,7 @@
 ﻿#pragma once
 
-#define GAME_NAME "cs2.exe"
-#define CLIENT_DLL "client.dll"
+#define GAME_NAME "ac_client.exe"
+#define CLIENT_DLL "ac_client.exe"
 
 #define DISABLE_TIMERS 1
 #define USE_LOCALHOST 1

@@ -15,7 +15,7 @@ private:
 		HMODULE LEECHCORE = nullptr;
 	};
 
-	static inline LibModules modules{ };
+	static inline LibModules modules { };
 
 	struct CurrentProcessInformation
 	{
@@ -25,7 +25,7 @@ private:
 		std::string process_name = "";
 	};
 
-	static inline CurrentProcessInformation current_process{ };
+	static inline CurrentProcessInformation current_process { };
 
 	static inline BOOLEAN DMA_INITIALIZED = FALSE;
 	static inline BOOLEAN PROCESS_INITIALIZED = FALSE;
@@ -106,8 +106,8 @@ public:
 
 	/**
 	* \brief Gets the module list of the process
-	* \param process_name the name of the process
-	* \return all the module names of the process
+	* \param process_name the name of the process 
+	* \return all the module names of the process 
 	*/
 	std::vector<std::string> GetModuleList(std::string process_name);
 
@@ -119,7 +119,7 @@ public:
 
 	/**
 	* \brief Gets the process peb
-	* \return the process peb
+	* \return the process peb 
 	*/
 	PEB GetProcessPeb();
 
@@ -176,7 +176,7 @@ public:
 	/**
 	 * \brief Scans the process for the signature.
 	 * \param signature the signature example "48 ? ? ?"
-	 * \param range_start Region to start scan from
+	 * \param range_start Region to start scan from 
 	 * \param range_end Region up to where it should scan
 	 * \param PID (OPTIONAL) where to read to?
 	 * \return address of signature
@@ -184,11 +184,11 @@ public:
 	uint64_t FindSignature(const char* signature, uint64_t range_start, uint64_t range_end, int PID = 0);
 
 	/**
-	 * \brief Writes memory to the process
+	 * \brief Writes memory to the process 
 	 * \param address The address to write to
 	 * \param buffer The buffer to write
 	 * \param size The size of the buffer
-	 * \return
+	 * \return 
 	 */
 	bool Write(uintptr_t address, void* buffer, size_t size) const;
 	bool Write(uintptr_t address, void* buffer, size_t size, int pid) const;
@@ -228,7 +228,7 @@ public:
 	template <typename T>
 	T Read(void* address)
 	{
-		T buffer{ };
+		T buffer { };
 		memset(&buffer, 0, sizeof(T));
 		Read(reinterpret_cast<uint64_t>(address), reinterpret_cast<void*>(&buffer), sizeof(T));
 
@@ -250,7 +250,7 @@ public:
 	template <typename T>
 	T Read(void* address, int pid)
 	{
-		T buffer{ };
+		T buffer { };
 		memset(&buffer, 0, sizeof(T));
 		Read(reinterpret_cast<uint64_t>(address), reinterpret_cast<void*>(&buffer), sizeof(T), pid);
 
@@ -300,7 +300,7 @@ public:
 	/**
 	 * \brief Adds a scatter read/write request to the handle
 	 * \param handle the handle
-	 * \param address the address to read/write to
+	 * \param address the address to read/write to 
 	 * \param buffer the buffer to read/write to
 	 * \param size the size of buffer
 	 */
@@ -311,15 +311,15 @@ public:
 	{
 		AddScatterReadRequest(handle, address, reinterpret_cast<void*>(buffer), sizeof(T));
 	}
-
+		
 	void AddScatterWriteRequest(VMMDLL_SCATTER_HANDLE handle, uint64_t address, void* buffer, size_t size);
-
+		
 
 	/**
 	 * \brief Executes all prepared scatter requests, note if you created a scatter handle with a pid
 	 * you'll need to specify the pid in the execute function. so we can clear the scatters from the handle.
-	 * \param handle
-	 * \param pid
+	 * \param handle 
+	 * \param pid 
 	 */
 	void ExecuteReadScatter(VMMDLL_SCATTER_HANDLE handle, int pid = 0);
 	void ExecuteWriteScatter(VMMDLL_SCATTER_HANDLE handle, int pid = 0);

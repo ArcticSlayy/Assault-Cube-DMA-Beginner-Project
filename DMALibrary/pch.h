@@ -18,7 +18,7 @@
 #include <fstream>
 #include <filesystem>
 
-//#define DEBUG_INFO
+#define DEBUG_INFO
 #ifdef DEBUG_INFO
 #define LOG(fmt, ...) std::printf(fmt, ##__VA_ARGS__)
 #define LOGW(fmt, ...) std::wprintf(fmt, ##__VA_ARGS__)

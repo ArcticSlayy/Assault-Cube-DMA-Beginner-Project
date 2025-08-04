@@ -1,0 +1,83 @@
+{
+    "Aim": {
+        "AimFriendly": false,
+        "AimVisible": false,
+        "Aimbot": false,
+        "AimbotFov": 0.0,
+        "AimbotFovColor": [
+            1.0,
+            1.0,
+            1.0,
+            1.0
+        ],
+        "AimbotKey": 0,
+        "AimbotKeyMode": 0,
+        "AimbotSmooth": 0.0,
+        "DrawFov": false,
+        "Trigger": false,
+        "TriggerDelay": 0,
+        "TriggerKey": 0,
+        "TriggerKeyMode": 0
+    },
+    "Kmbox": {
+        "Enabled": false,
+        "Ip": "",
+        "Port": 0,
+        "Uuid": ""
+    },
+    "Visuals": {
+        "Background": false,
+        "Bones": false,
+        "BonesColor": [
+            1.0,
+            1.0,
+            1.0,
+            1.0
+        ],
+        "Box": false,
+        "BoxColor": [
+            1.0,
+            1.0,
+            1.0,
+            1.0
+        ],
+        "BoxColorVisible": [
+            1.0,
+            1.0,
+            1.0,
+            1.0
+        ],
+        "Enabled": false,
+        "Health": false,
+        "Hitmarker": false,
+        "HitmarkerColor": [
+            1.0,
+            1.0,
+            1.0,
+            1.0
+        ],
+        "Name": false,
+        "NameColor": [
+            1.0,
+            1.0,
+            1.0,
+            1.0
+        ],
+        "TeamCheck": false,
+        "VisibleCheck": false,
+        "Watermark": false,
+        "WatermarkColor": [
+            1.0,
+            1.0,
+            1.0,
+            1.0
+        ],
+        "Weapon": false,
+        "WeaponColor": [
+            1.0,
+            1.0,
+            1.0,
+            1.0
+        ]
+    }
+}

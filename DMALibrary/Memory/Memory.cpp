@@ -33,8 +33,8 @@ Memory::~Memory()
 
 bool Memory::DumpMemoryMap(bool debug)
 {
-	LPCSTR args[] = {const_cast<LPCSTR>(""), const_cast<LPCSTR>("-device"), const_cast<LPCSTR>("fpga://algo=0"), const_cast<LPCSTR>(""), const_cast<LPCSTR>("")};
-	int argc = 3;
+	LPCSTR args[] = { "-device", "fpga", "-waitinitialize", "-norefresh", "", "" };
+	int argc = 4;
 	if (debug)
 	{
 		args[argc++] = const_cast<LPCSTR>("-v");
@@ -212,7 +212,9 @@ bool Memory::Init(std::string process_name, bool memMap, bool debug)
 	}
 	current_process.process_name = process_name;
 	if (!mem.FixCr3())
-		LOG("[!] Failed to fix CR3\n");
+		std::cout << "Failed to fix CR3" << std::endl;
+	else
+		std::cout << "CR3 fixed" << std::endl;
 
 	current_process.base_address = GetBaseDaddy(process_name);
 	if (!current_process.base_address)
