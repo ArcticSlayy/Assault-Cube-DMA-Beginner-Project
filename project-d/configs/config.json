@@ -20,10 +20,10 @@
         "TriggerKeyMode": 0
     },
     "Kmbox": {
-        "Enabled": false,
-        "Ip": "",
-        "Port": 0,
-        "Uuid": ""
+        "Enabled": true,
+        "Ip": "192.168.2.188",
+        "Port": 10244,
+        "Uuid": "A8F45054"
     },
     "Visuals": {
         "Background": false,
