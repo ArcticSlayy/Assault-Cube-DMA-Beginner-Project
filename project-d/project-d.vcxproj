@@ -128,6 +128,7 @@
     <ClInclude Include="Source\Features\ESP\ESP.hpp" />
     <ClInclude Include="Source\Features\Features.hpp" />
     <ClInclude Include="Source\Misc\Animation\Animation.hpp" />
+    <ClInclude Include="Source\Overlay\Fonts\font_awesome.h" />
     <ClInclude Include="Source\Overlay\Fonts\IBMPlexMono_Medium.h" />
     <ClInclude Include="Source\Overlay\Overlay.hpp" />
     <ClInclude Include="Source\Overlay\Render\Renderer.hpp" />
@@ -279,6 +280,7 @@
     <ClCompile Include="Source\Features\ESP\ESP.cpp" />
     <ClCompile Include="Source\Misc\Animation\Animation.cpp" />
     <ClCompile Include="Source\Misc\Timer\Timer.cpp" />
+    <ClCompile Include="Source\Overlay\Fonts\font_awesome.cpp" />
     <ClCompile Include="Source\Overlay\Overlay.cpp" />
     <ClCompile Include="Source\Kmbox\Manager.cpp" />
     <ClCompile Include="Source\main.cpp" />

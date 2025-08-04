@@ -39,3 +39,4 @@ lib/*
 
 # User-specific config files	
 /.json
+project-d/configs/config.json
