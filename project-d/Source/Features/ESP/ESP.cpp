@@ -24,7 +24,6 @@ void ESP::Render(ImDrawList* drawList)
         EntityData entityData;
         auto scatterHandle = mem.CreateScatterHandle();
 
-        mem.AddScatterReadRequest(scatterHandle, dwEntity + p_entity->str_name, entityData.name);
         mem.AddScatterReadRequest(scatterHandle, dwEntity + p_entity->i_health, &entityData.health);
         mem.AddScatterReadRequest(scatterHandle, dwEntity + p_entity->i_team, &entityData.team);
         mem.AddScatterReadRequest(scatterHandle, dwEntity + p_entity->i_score, &entityData.score);
@@ -32,6 +31,11 @@ void ESP::Render(ImDrawList* drawList)
         mem.AddScatterReadRequest(scatterHandle, dwEntity + p_entity->i_deaths, &entityData.deaths);
         mem.AddScatterReadRequest(scatterHandle, dwEntity + p_entity->v3_head_pos, &entityData.headPosition);
         mem.AddScatterReadRequest(scatterHandle, dwEntity + p_entity->v3_foot_pos, &entityData.footPosition);
+
+        char name[260];
+        mem.Read(dwEntity + p_entity->str_name, name, sizeof(name)); // Direct memory read
+        name[259] = '\0'; // Ensure null-termination
+        entityData.name = std::string(name); // Assign the content of the buffer to the std::string
 
         mem.ExecuteReadScatter(scatterHandle);
         mem.CloseScatterHandle(scatterHandle);

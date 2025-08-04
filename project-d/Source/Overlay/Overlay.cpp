@@ -3,6 +3,7 @@
 
 #include "Overlay.hpp"
 #include "Fonts/IBMPlexMono_Medium.h"
+#include "Features.hpp"
 
 ID3D11Device* Overlay::device = nullptr;
 
@@ -30,7 +31,6 @@ LRESULT CALLBACK window_procedure(HWND window, UINT msg, WPARAM wParam, LPARAM l
 		break;
 
 	case WM_DESTROY:
-		Overlay::DestroyDevice();
 		Overlay::DestroyOverlay();
 		Overlay::DestroyImGui();
 		PostQuitMessage(0);
@@ -386,6 +386,7 @@ void Overlay::StyleMenu(ImGuiIO& IO, ImGuiStyle& style)
 
 		m_Tabs.push_back("Aim");     // MenuPage_Aiming
 		m_Tabs.push_back("Visuals");    // MenuPage_Visuals
+        m_Tabs.push_back("Entities"); // MenuPage_Entities
 		m_Tabs.push_back("Config");    // MenuPage_Configs
 		m_Tabs.push_back("Info");       // MenuPage_Info
 
@@ -419,6 +420,7 @@ void Overlay::Destroy()
 	DestroyDevice();
 	DestroyOverlay();
 }
+
 
 void Overlay::RenderMenu()
 {
@@ -522,7 +524,7 @@ void Overlay::RenderMenu()
 					ImGui::BeginChild("Trigger", ImVec2(fGroupWidth,
 						ImGui::GetFrameHeight() + // MenuBar
 						style.WindowPadding.y * 2 + // child padding
-						style.ItemSpacing.x * 15 + // spacing
+						(style.ItemSpacing.x * 15) + // spacing
 						ImGui::GetFontSize() * 10 // checkbox + separators
 					), ImGuiChildFlags_Border, ImGuiWindowFlags_MenuBar);
 					{
@@ -764,7 +766,29 @@ void Overlay::RenderMenu()
 				}
 				ImGui::EndChild();
 			}
+			else if (m_iSelectedPage == MenuPage_Entities)
+			{
+				ImGui::BeginChild("Entities", ImVec2(0, 0), ImGuiChildFlags_Border, ImGuiWindowFlags_MenuBar);
+				{
+					if (ImGui::BeginMenuBar()) {
+						ImGui::Text("Entities");
+						ImGui::EndMenuBar();
+					}
 
+					for (const auto& entity : EntityManager::entities)
+					{
+						ImGui::Text("Name: %s", entity.name);
+						ImGui::Text("Health: %d", entity.health);
+						ImGui::Text("Team: %d", entity.team);
+						ImGui::Text("Score: %d", entity.score);
+						ImGui::Text("Kills: %d", entity.kills);
+						ImGui::Text("Deaths: %d", entity.deaths);
+						ImGui::Text("Position: (%.2f, %.2f, %.2f)", entity.headPosition.x, entity.headPosition.y, entity.headPosition.z);
+						ImGui::Separator();
+					}
+				}
+				ImGui::EndChild();
+			}
 			else if (m_iSelectedPage == MenuPage_Info)
 			{
 				ImGui::BeginChild("Info", ImVec2(0, 0), ImGuiChildFlags_Border, ImGuiWindowFlags_MenuBar);

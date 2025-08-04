@@ -6,7 +6,7 @@
 
 
 struct EntityData {
-    char name[260];
+    std::string name;
     int health;
     int team;
     int score;
