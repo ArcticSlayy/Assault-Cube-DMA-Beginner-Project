@@ -1,5 +1,6 @@
 #include <Pch.hpp>
 #include <SDK.hpp>
+#include "Offsets.h"
 
 bool SDK::Init()
 {
@@ -31,3 +32,8 @@ bool SDK::WorldToScreen(const Vector3& WorldPos, Vector2& ScreenPos, const Matri
 
     return true;
 }
+
+Offsets* offsets = new Offsets();
+Offsets::Game* p_game = new Offsets::Game();
+Offsets::Entity* p_entity = new Offsets::Entity();
+Offsets::Entity::Weapon* p_weapon = new Offsets::Entity::Weapon();

@@ -1,7 +1,24 @@
+#pragma once
+#include <vector>
+#include <string>
 #include <SDK.hpp>
+#include "Aimbot/Aimbot.hpp"
 
-#include <Aimbot/Aimbot.hpp>
-#include <ESP/ESP.hpp>
+
+struct EntityData {
+    char name[260];
+    int health;
+    int team;
+    int score;
+    int kills;
+    int deaths;
+    Vector3 headPosition;
+    Vector3 footPosition;
+};
+
+namespace EntityManager {
+    inline std::vector<EntityData> entities;
+}
 
 class Features
 {

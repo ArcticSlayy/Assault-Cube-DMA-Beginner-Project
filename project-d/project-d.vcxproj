@@ -118,6 +118,7 @@
     <ClInclude Include="External\imgui\imstb_rectpack.h" />
     <ClInclude Include="External\imgui\imstb_textedit.h" />
     <ClInclude Include="External\imgui\imstb_truetype.h" />
+    <ClInclude Include="Source\SDK\Offsets.h" />
     <ClInclude Include="Source\Dma\DMA.hpp" />
     <ClInclude Include="Source\Math\Matrix.hpp" />
     <ClInclude Include="Source\Math\Parser.hpp" />
