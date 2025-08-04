@@ -128,15 +128,45 @@ bool Overlay::CreateDevice()
 
 void Overlay::DestroyDevice()
 {
-	if (device)
-	{
-		device->Release();
-		device_context->Release();
-		swap_chain->Release();
-		render_targetview->Release();
-	}
-	else
-		LOG_ERROR("Device not found when exiting");
+    if (device_context)
+    {
+        device_context->Release();
+        device_context = nullptr;
+    }
+    else
+    {
+        LOG_ERROR("device_context is null during cleanup");
+    }
+
+    if (swap_chain)
+    {
+        swap_chain->Release();
+        swap_chain = nullptr;
+    }
+    else
+    {
+        LOG_ERROR("swap_chain is null during cleanup");
+    }
+
+    if (render_targetview)
+    {
+        render_targetview->Release();
+        render_targetview = nullptr;
+    }
+    else
+    {
+        LOG_ERROR("render_targetview is null during cleanup");
+    }
+
+    if (device)
+    {
+        device->Release();
+        device = nullptr;
+    }
+    else
+    {
+        LOG_ERROR("device is null during cleanup");
+    }
 }
 
 bool Overlay::CreateOverlay()
@@ -437,18 +467,18 @@ void Overlay::RenderMenu()
 		ImGui::SetCursorPosY(ImGui::GetFrameHeight());
 		ImGui::BeginChild("Content", ImVec2(0, ImGui::GetWindowHeight() - ImGui::GetFrameHeight() * 2), ImGuiChildFlags_Border, ImGuiWindowFlags_NoBackground);
 		{
-			float fGroupWidth = (ImGui::GetWindowWidth() - style.WindowPadding.x * 2 - style.ItemSpacing.x) / 2;
+			float fGroupWidth = (ImGui::GetWindowWidth() - style.WindowPadding.x * 2 - style.ItemSpacing.x * 15) / 2;
 
 			if (m_iSelectedPage == MenuPage_Aim)
 			{
 				ImGui::BeginGroup(); // Left group
 				{
-					ImGui::BeginChild("Aimbot", ImVec2(fGroupWidth, 
+					ImGui::BeginChild("Aimbot", ImVec2(fGroupWidth,
 						ImGui::GetFrameHeight() + // MenuBar
 						style.WindowPadding.y * 2 + // child padding
 						style.ItemSpacing.x * 15 + // spacing
 						ImGui::GetFontSize() * 10 // checkbox + separators
-					), ImGuiChildFlags_Border, ImGuiWindowFlags_MenuBar); 
+					), ImGuiChildFlags_Border, ImGuiWindowFlags_MenuBar);
 					{
 						if (ImGui::BeginMenuBar()) {
 							ImGui::SetCursorPos(style.FramePadding);
@@ -536,7 +566,7 @@ void Overlay::RenderMenu()
 				{
 					if (ImGui::BeginMenuBar()) {
 						ImGui::SetCursorPos(style.FramePadding);
-						ImAdd::CheckBox("Visuals##Enable", &config.Visuals.Enabled); 
+						ImAdd::CheckBox("Visuals##Enable", &config.Visuals.Enabled);
 						ImGui::EndMenuBar();
 					}
 
@@ -627,7 +657,7 @@ void Overlay::RenderMenu()
 						ImGui::Text("Configs");
 						ImGui::EndMenuBar();
 					}
-						
+
 					static char configName[128] = "";
 					static std::vector<std::string> configFiles;
 
@@ -752,7 +782,7 @@ void Overlay::RenderMenu()
 
 					ImGui::Text("KMBOX:");
 					ImGui::SameLine();
-					ImGui::TextColored(ProcInfo::KmboxInitialized ? ImVec4(0, 1, 0, 1)/* green */: ImVec4(1, 0, 0, 1)/* red */, "%s", ProcInfo::KmboxInitialized ? "Connected" : "Disconnected");
+					ImGui::TextColored(ProcInfo::KmboxInitialized ? ImVec4(0, 1, 0, 1)/* green */ : ImVec4(1, 0, 0, 1)/* red */, "%s", ProcInfo::KmboxInitialized ? "Connected" : "Disconnected");
 
 					ImAdd::SeparatorText("Game");
 
@@ -779,6 +809,12 @@ void Overlay::RenderMenu()
 					{
 						Globals::Running = false;
 						shouldRun = false;
+						try {
+							Destroy(); // Ensure resources are cleaned up immediately
+						}
+						catch (...) {
+							LOG_ERROR("Error during cleanup");
+						}
 					}
 				}
 				ImGui::EndChild();

@@ -11,6 +11,9 @@
 ## Introduction
 This is a simple base to start building your Direct Memory Access (DMA) cheats.
 
+## Todo
+- [ ] Fix the nullptr errors when hitting Unload in the Info tab.
+
 ## Usage
 1. Clone the repository.
 2. Open the project in Visual Studio.
@@ -23,3 +26,4 @@ This is a simple base to start building your Direct Memory Access (DMA) cheats.
 ## Credits
 - [Ulf Frisk](https://github.com/ufrisk) for [MemProcFS](https://github.com/ufrisk/MemProcFS)
 - [Metick](https://github.com/Metick) for the [DMALibrary](https://github.com/Metick/DMALibrary)
+- [kWAYTV](https://github.com/kWAYTV/dma-cheat-base#) for the [dma-cheat-base](https://github.com/kWAYTV/dma-cheat-base#)
