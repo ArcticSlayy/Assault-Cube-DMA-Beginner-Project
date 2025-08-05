@@ -11,6 +11,8 @@
 ## Introduction
 This is a simple base to start building your Direct Memory Access (DMA) cheats.
 
+I've currently implemented a basic cheat that reads player positions and displays them on the screen with boxes and names for now for Assault Cube. This is a beginner project so it's not optimized well, and has ESP stuttering. 
+
 ## Todo
 - [ ] Fix the nullptr errors when hitting Unload in the Info tab.
 - [ ] Fix the ESP giving some weird hitch effect when rendering the visuals around players.
