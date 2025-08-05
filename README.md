@@ -13,6 +13,8 @@ This is a simple base to start building your Direct Memory Access (DMA) cheats.
 
 ## Todo
 - [ ] Fix the nullptr errors when hitting Unload in the Info tab.
+- [ ] Fix the ESP giving some weird hitch effect when rendering the visuals around players.
+- [ ] Re-implement the Visuals to toggle ESP on and off, it's currently always on for debugging purposes.
 
 ## Usage
 1. Clone the repository.
