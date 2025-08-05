@@ -11,25 +11,19 @@ bool SDK::Init()
     return true;
 }
 
-bool SDK::WorldToScreen(const Vector3& WorldPos, Vector2& ScreenPos, const Matrix& Matrix)
+// WorldToScreen using column-major float[16] (mythos style)
+bool SDK::WorldToScreen(const Vector3& pos, Vector2& out, const Matrix& matrix, int width, int height)
 {
-    float w = Matrix[3][0] * WorldPos.x + Matrix[3][1] * WorldPos.y + Matrix[3][2] * WorldPos.z + Matrix[3][3];
-
-    if (w < 0.001f) {
-        return false;
-    }
-
-    float inv_w = 1.0f / w;
-
-    float ndc_x = (Matrix[0][0] * WorldPos.x + Matrix[0][1] * WorldPos.y + Matrix[0][2] * WorldPos.z + Matrix[0][3]) * inv_w;
-    float ndc_y = (Matrix[1][0] * WorldPos.x + Matrix[1][1] * WorldPos.y + Matrix[1][2] * WorldPos.z + Matrix[1][3]) * inv_w;
-
-    float screen_x = ScreenCenter.x + (ndc_x * ScreenCenter.x);
-    float screen_y = ScreenCenter.y - (ndc_y * ScreenCenter.y);
-
-    ScreenPos.x = screen_x;
-    ScreenPos.y = screen_y;
-
+    const float* m = (const float*)&matrix;
+    float x = pos.x, y = pos.y, z = pos.z;
+    float w = m[3] * x + m[7] * y + m[11] * z + m[15];
+    if (w < 0.001f) return false;
+    float screen_x = m[0] * x + m[4] * y + m[8] * z + m[12];
+    float screen_y = m[1] * x + m[5] * y + m[9] * z + m[13];
+    screen_x = (width / 2.0f) + (screen_x / w) * (width / 2.0f);
+    screen_y = (height / 2.0f) - (screen_y / w) * (height / 2.0f);
+    out.x = screen_x;
+    out.y = screen_y;
     return true;
 }
 

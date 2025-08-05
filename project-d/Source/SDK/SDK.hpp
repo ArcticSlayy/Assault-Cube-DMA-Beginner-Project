@@ -25,7 +25,8 @@ public:
 		}).detach();
 	}
 
-	bool WorldToScreen(const Vector3& WorldPos, Vector2& ScreenPos, const Matrix& Matrix = Globals::ViewMatrix);
+	// WorldToScreen using column-major float[16] (mythos style)
+	bool WorldToScreen(const Vector3& pos, Vector2& out, const Matrix& matrix, int width, int height);
 };
 
 inline SDK& sdk = SDK::Get();
