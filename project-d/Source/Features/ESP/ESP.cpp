@@ -23,8 +23,15 @@ bool WorldToScreenMythos(const Vector3& pos, Vector2& out, const float* matrix, 
 
 void ESP::Render(ImDrawList* drawList)
 {
-    // Update the view matrix from memory before using it
-    mem.Read(Globals::ClientBase + p_game->view_matrix, &Globals::ViewMatrix, sizeof(Globals::ViewMatrix));
+    // Use scatter read for view matrix and all entity data
+    auto scatterHandle = mem.CreateScatterHandle();
+    if (!scatterHandle)
+    {
+        return;
+    }
+
+    // Queue view matrix read
+    mem.AddScatterReadRequest(scatterHandle, Globals::ClientBase + p_game->view_matrix, &Globals::ViewMatrix, sizeof(Globals::ViewMatrix));
 
     int playerCount = mem.Read<int>(Globals::ClientBase + p_game->player_count);
     uint32_t dwLocalPlayer = mem.Read<uint32_t>(Globals::ClientBase + p_game->local_player);
@@ -33,12 +40,7 @@ void ESP::Render(ImDrawList* drawList)
 
     uint32_t entityListAddr = mem.Read<uint32_t>(Globals::ClientBase + p_game->entity_list);
 
-    auto scatterHandle = mem.CreateScatterHandle();
-    if (!scatterHandle)
-    {
-        return;
-    }
-
+    std::vector<std::pair<uint32_t, EntityData>> entityRequests;
     for (auto i = 1; i < playerCount; i++)
     {
         uint32_t dwEntity = mem.Read<uint32_t>(entityListAddr + (i * 0x4));
@@ -50,34 +52,33 @@ void ESP::Render(ImDrawList* drawList)
             continue;
 
         EntityData entityData;
-
         mem.AddScatterReadRequest(scatterHandle, dwEntity + p_entity->i_health, &entityData.health);
         mem.AddScatterReadRequest(scatterHandle, dwEntity + p_entity->i_team, &entityData.team);
         mem.AddScatterReadRequest(scatterHandle, dwEntity + p_entity->i_score, &entityData.score);
         mem.AddScatterReadRequest(scatterHandle, dwEntity + p_entity->i_kills, &entityData.kills);
         mem.AddScatterReadRequest(scatterHandle, dwEntity + p_entity->i_deaths, &entityData.deaths);
-
-        entityData.headPosition.x = mem.Read<float>(dwEntity + p_entity->v3_head_pos);
-        entityData.headPosition.y = mem.Read<float>(dwEntity + p_entity->v3_head_pos + 0x4);
-        entityData.headPosition.z = mem.Read<float>(dwEntity + p_entity->v3_head_pos + 0x8);
-
-        entityData.footPosition.x = mem.Read<float>(dwEntity + p_entity->v3_foot_pos);
-        entityData.footPosition.y = mem.Read<float>(dwEntity + p_entity->v3_foot_pos + 0x4);
-        entityData.footPosition.z = mem.Read<float>(dwEntity + p_entity->v3_foot_pos + 0x8);
-
+        // Read head and foot positions as Vector3 structs in one go
+        entityData.headPosition = mem.Read<Vector3>(dwEntity + p_entity->v3_head_pos);
+        entityData.footPosition = mem.Read<Vector3>(dwEntity + p_entity->v3_foot_pos);
         char name[260];
         if (!mem.Read(dwEntity + p_entity->str_name, name, sizeof(name)))
         {
             continue;
         }
-        name[259] = '\0'; // Ensure null-termination
+        name[259] = '\0';
         entityData.name = std::string(name);
-
-        EntityManager::entities.push_back(entityData);
+        entityRequests.emplace_back(dwEntity, entityData);
     }
 
+    // Execute all scatter reads (including view matrix and entity stats)
     mem.ExecuteReadScatter(scatterHandle);
     mem.CloseScatterHandle(scatterHandle);
+
+    // Now push the entities to the manager
+    for (auto& [dwEntity, entityData] : entityRequests)
+    {
+        EntityManager::entities.push_back(entityData);
+    }
 
     int width = (int)Screen.x;
     int height = (int)Screen.y;
