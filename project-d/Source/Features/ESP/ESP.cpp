@@ -7,66 +7,88 @@
 
 void ESP::Render(ImDrawList* drawList)
 {
-    // Use scatter read for view matrix and all entity data
-    auto scatterHandle = mem.CreateScatterHandle();
-    if (!scatterHandle)
-    {
+    constexpr int MAX_PLAYERS = 32;
+    // --- First scatter: read game globals ---
+    auto scatterGlobals = mem.CreateScatterHandle();
+    if (!scatterGlobals)
         return;
+
+    int playerCount = 0;
+    uint32_t dwLocalPlayer = 0;
+    uint32_t entityListAddr = 0;
+    mem.AddScatterReadRequest(scatterGlobals, Globals::ClientBase + p_game->player_count, &playerCount, sizeof(playerCount));
+    mem.AddScatterReadRequest(scatterGlobals, Globals::ClientBase + p_game->local_player, &dwLocalPlayer, sizeof(dwLocalPlayer));
+    mem.AddScatterReadRequest(scatterGlobals, Globals::ClientBase + p_game->entity_list, &entityListAddr, sizeof(entityListAddr));
+    mem.AddScatterReadRequest(scatterGlobals, Globals::ClientBase + p_game->view_matrix, &Globals::ViewMatrix, sizeof(Globals::ViewMatrix));
+
+    mem.ExecuteReadScatter(scatterGlobals);
+    mem.CloseScatterHandle(scatterGlobals);
+
+    // --- Second scatter: read entity addresses ---
+    auto scatterEntities = mem.CreateScatterHandle();
+    if (!scatterEntities)
+        return;
+
+    uint32_t entityAddrs[MAX_PLAYERS] = {};
+    for (int i = 1; i < MAX_PLAYERS; i++)
+    {
+        mem.AddScatterReadRequest(scatterEntities, entityListAddr + (i * 0x4), &entityAddrs[i], sizeof(entityAddrs[i]));
     }
+    mem.ExecuteReadScatter(scatterEntities);
+    mem.CloseScatterHandle(scatterEntities);
 
-    // Queue view matrix read
-    mem.AddScatterReadRequest(scatterHandle, Globals::ClientBase + p_game->view_matrix, &Globals::ViewMatrix, sizeof(Globals::ViewMatrix));
+    // --- Third scatter: read entity data for valid addresses ---
+    auto scatterData = mem.CreateScatterHandle();
+    if (!scatterData)
+        return;
 
-    int playerCount = mem.Read<int>(Globals::ClientBase + p_game->player_count);
-    uint32_t dwLocalPlayer = mem.Read<uint32_t>(Globals::ClientBase + p_game->local_player);
+    bool entityDead[MAX_PLAYERS] = {};
+    int entityHealth[MAX_PLAYERS] = {};
+    int entityTeam[MAX_PLAYERS] = {};
+    int entityScore[MAX_PLAYERS] = {};
+    int entityKills[MAX_PLAYERS] = {};
+    int entityDeaths[MAX_PLAYERS] = {};
+    Vector3 entityHeadPos[MAX_PLAYERS] = {};
+    Vector3 entityFootPos[MAX_PLAYERS] = {};
+    char entityNames[MAX_PLAYERS][260] = {};
+
+    for (int i = 1; i < playerCount && i < MAX_PLAYERS; i++)
+    {
+        if (!entityAddrs[i])
+            continue;
+        mem.AddScatterReadRequest(scatterData, entityAddrs[i] + p_entity->i_dead, &entityDead[i], sizeof(entityDead[i]));
+        mem.AddScatterReadRequest(scatterData, entityAddrs[i] + p_entity->i_health, &entityHealth[i], sizeof(entityHealth[i]));
+        mem.AddScatterReadRequest(scatterData, entityAddrs[i] + p_entity->i_team, &entityTeam[i], sizeof(entityTeam[i]));
+        mem.AddScatterReadRequest(scatterData, entityAddrs[i] + p_entity->i_score, &entityScore[i], sizeof(entityScore[i]));
+        mem.AddScatterReadRequest(scatterData, entityAddrs[i] + p_entity->i_kills, &entityKills[i], sizeof(entityKills[i]));
+        mem.AddScatterReadRequest(scatterData, entityAddrs[i] + p_entity->i_deaths, &entityDeaths[i], sizeof(entityDeaths[i]));
+        mem.AddScatterReadRequest(scatterData, entityAddrs[i] + p_entity->v3_head_pos, &entityHeadPos[i], sizeof(entityHeadPos[i]));
+        mem.AddScatterReadRequest(scatterData, entityAddrs[i] + p_entity->v3_foot_pos, &entityFootPos[i], sizeof(entityFootPos[i]));
+        mem.AddScatterReadRequest(scatterData, entityAddrs[i] + p_entity->str_name, entityNames[i], sizeof(entityNames[i]));
+    }
+    mem.ExecuteReadScatter(scatterData);
+    mem.CloseScatterHandle(scatterData);
 
     EntityManager::entities.clear();
-
-    uint32_t entityListAddr = mem.Read<uint32_t>(Globals::ClientBase + p_game->entity_list);
-
-    std::vector<std::pair<uint32_t, EntityData>> entityRequests;
-    for (auto i = 1; i < playerCount; i++)
+    for (int i = 1; i < playerCount && i < MAX_PLAYERS; i++)
     {
-        uint32_t dwEntity = mem.Read<uint32_t>(entityListAddr + (i * 0x4));
-        if (!dwEntity)
+        if (!entityAddrs[i] || entityDead[i])
             continue;
-
-        bool bIsDead = mem.Read<bool>(dwEntity + p_entity->i_dead);
-        if (bIsDead)
-            continue;
-
+        entityNames[i][259] = '\0';
         EntityData entityData;
-        mem.AddScatterReadRequest(scatterHandle, dwEntity + p_entity->i_health, &entityData.health);
-        mem.AddScatterReadRequest(scatterHandle, dwEntity + p_entity->i_team, &entityData.team);
-        mem.AddScatterReadRequest(scatterHandle, dwEntity + p_entity->i_score, &entityData.score);
-        mem.AddScatterReadRequest(scatterHandle, dwEntity + p_entity->i_kills, &entityData.kills);
-        mem.AddScatterReadRequest(scatterHandle, dwEntity + p_entity->i_deaths, &entityData.deaths);
-        // Read head and foot positions as Vector3 structs in one go
-        entityData.headPosition = mem.Read<Vector3>(dwEntity + p_entity->v3_head_pos);
-        entityData.footPosition = mem.Read<Vector3>(dwEntity + p_entity->v3_foot_pos);
-        char name[260];
-        if (!mem.Read(dwEntity + p_entity->str_name, name, sizeof(name)))
-        {
-            continue;
-        }
-        name[259] = '\0';
-        entityData.name = std::string(name);
-        entityRequests.emplace_back(dwEntity, entityData);
-    }
-
-    // Execute all scatter reads (including view matrix and entity stats)
-    mem.ExecuteReadScatter(scatterHandle);
-    mem.CloseScatterHandle(scatterHandle);
-
-    // Now push the entities to the manager
-    for (auto& [dwEntity, entityData] : entityRequests)
-    {
+        entityData.name = std::string(entityNames[i]);
+        entityData.health = entityHealth[i];
+        entityData.team = entityTeam[i];
+        entityData.score = entityScore[i];
+        entityData.kills = entityKills[i];
+        entityData.deaths = entityDeaths[i];
+        entityData.headPosition = entityHeadPos[i];
+        entityData.footPosition = entityFootPos[i];
         EntityManager::entities.push_back(entityData);
     }
 
     int width = (int)Screen.x;
     int height = (int)Screen.y;
-
     for (const auto& entity : EntityManager::entities)
     {
         Vector2 headScreenPos, footScreenPos;
@@ -77,11 +99,7 @@ void ESP::Render(ImDrawList* drawList)
             float box_width = box_height / 2.0f;
             float box_x = headScreenPos.x - (box_width / 2.0f);
             float box_y = headScreenPos.y;
-
-            // Draw box
             drawList->AddRect(ImVec2(box_x, box_y), ImVec2(box_x + box_width, box_y + box_height), IM_COL32(255, 0, 0, 255), 0.0f, 0, 2.0f);
-
-            // Draw centered name above head
             ImVec2 textSize = ImGui::CalcTextSize(entity.name.c_str());
             ImVec2 namePos(headScreenPos.x - textSize.x / 2.0f, headScreenPos.y - textSize.y - 2.0f);
             drawList->AddText(namePos, IM_COL32(255, 255, 255, 255), entity.name.c_str());
