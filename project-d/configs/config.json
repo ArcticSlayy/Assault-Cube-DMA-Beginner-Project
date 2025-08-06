@@ -34,11 +34,11 @@
             1.0,
             1.0
         ],
-        "Box": false,
+        "Box": true,
         "BoxColor": [
             1.0,
-            1.0,
-            1.0,
+            0.0,
+            0.0,
             1.0
         ],
         "BoxColorVisible": [
@@ -47,7 +47,7 @@
             1.0,
             1.0
         ],
-        "Enabled": false,
+        "Enabled": true,
         "Health": false,
         "Hitmarker": false,
         "HitmarkerColor": [
@@ -56,11 +56,11 @@
             1.0,
             1.0
         ],
-        "Name": false,
+        "Name": true,
         "NameColor": [
+            0.04651165008544922,
             1.0,
-            1.0,
-            1.0,
+            0.0,
             1.0
         ],
         "TeamCheck": false,

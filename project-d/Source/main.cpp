@@ -86,7 +86,7 @@ int main()
         TIMER("Global render");
 
         overlay.StartRender();
-
+         
         if (overlay.shouldRenderMenu)
             overlay.RenderMenu();
 

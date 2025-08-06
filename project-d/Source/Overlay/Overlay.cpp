@@ -662,6 +662,20 @@ void Overlay::RenderMenu()
 
 					static char configName[128] = "";
 					static std::vector<std::string> configFiles;
+					static int lastSelectedTab = -1;
+					static bool menuWasOpen = false;
+					// Refresh config list when menu is opened or tab is switched to Config
+					if (shouldRenderMenu && !menuWasOpen) {
+						menuWasOpen = true;
+						configFiles = config.ListConfigs("configs/");
+					}
+					if (!shouldRenderMenu) {
+						menuWasOpen = false;
+					}
+					if (m_iSelectedPage == MenuPage_Config && lastSelectedTab != MenuPage_Config) {
+						configFiles = config.ListConfigs("configs/");
+					}
+					lastSelectedTab = m_iSelectedPage;
 
 					if (ImAdd::Button("Refresh"))
 					{

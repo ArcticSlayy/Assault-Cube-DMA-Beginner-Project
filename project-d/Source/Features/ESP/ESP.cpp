@@ -99,10 +99,27 @@ void ESP::Render(ImDrawList* drawList)
             float box_width = box_height / 2.0f;
             float box_x = headScreenPos.x - (box_width / 2.0f);
             float box_y = headScreenPos.y;
-            drawList->AddRect(ImVec2(box_x, box_y), ImVec2(box_x + box_width, box_y + box_height), IM_COL32(255, 0, 0, 255), 0.0f, 0, 2.0f);
-            ImVec2 textSize = ImGui::CalcTextSize(entity.name.c_str());
-            ImVec2 namePos(headScreenPos.x - textSize.x / 2.0f, headScreenPos.y - textSize.y - 2.0f);
-            drawList->AddText(namePos, IM_COL32(255, 255, 255, 255), entity.name.c_str());
+            if (config.Visuals.Box) {
+                ImU32 boxColor = IM_COL32(
+                    (int)(config.Visuals.BoxColor.x * 255),
+                    (int)(config.Visuals.BoxColor.y * 255),
+                    (int)(config.Visuals.BoxColor.z * 255),
+                    (int)(config.Visuals.BoxColor.w * 255)
+                );
+                drawList->AddRect(ImVec2(box_x, box_y), ImVec2(box_x + box_width, box_y + box_height), boxColor, 0.0f, 0, 2.0f);
+            }
+
+            if (config.Visuals.Name) {
+                ImU32 nameColor = IM_COL32(
+                    (int)(config.Visuals.NameColor.x * 255),
+                    (int)(config.Visuals.NameColor.y * 255),
+                    (int)(config.Visuals.NameColor.z * 255),
+                    (int)(config.Visuals.NameColor.w * 255)
+                );
+                ImVec2 textSize = ImGui::CalcTextSize(entity.name.c_str());
+                ImVec2 namePos(headScreenPos.x - textSize.x / 2.0f, headScreenPos.y - textSize.y - 2.0f);
+                drawList->AddText(namePos, nameColor, entity.name.c_str());
+            }
         }
     }
 }
