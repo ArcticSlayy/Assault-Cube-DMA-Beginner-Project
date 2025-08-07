@@ -16,17 +16,14 @@ namespace EntityManager {
         constexpr int MAX_PLAYERS = 32;
         Matrix newViewMatrix; // Temporary view matrix
         while (Globals::Running) {
-            bool allReadsSuccessful = true;
-
+            // Always update view matrix, even if entity reads fail
             auto scatterGlobals = mem.CreateScatterHandle();
-            if (!scatterGlobals) {
-                allReadsSuccessful = false;
-            }
             int playerCount = 0;
             uint32_t dwLocalPlayer = 0;
             uint32_t entityListAddr = 0;
             int localPlayerTeam = 0;
-            if (allReadsSuccessful) {
+            bool globalsReadOk = false;
+            if (scatterGlobals) {
                 mem.AddScatterReadRequest(scatterGlobals, Globals::ClientBase + p_game->player_count, &playerCount, sizeof(playerCount));
                 mem.AddScatterReadRequest(scatterGlobals, Globals::ClientBase + p_game->local_player, &dwLocalPlayer, sizeof(dwLocalPlayer));
                 mem.AddScatterReadRequest(scatterGlobals, Globals::ClientBase + p_game->entity_list, &entityListAddr, sizeof(entityListAddr));
@@ -34,8 +31,12 @@ namespace EntityManager {
                 mem.AddScatterReadRequest(scatterGlobals, dwLocalPlayer + p_entity->i_team, &localPlayerTeam, sizeof(localPlayerTeam));
                 mem.ExecuteReadScatter(scatterGlobals);
                 mem.CloseScatterHandle(scatterGlobals);
+                globalsReadOk = true;
             }
+            // Update view matrix every frame
+            Globals::ViewMatrix = newViewMatrix;
 
+            bool allReadsSuccessful = globalsReadOk;
             auto scatterEntities = mem.CreateScatterHandle();
             uint32_t entityAddrs[MAX_PLAYERS] = {};
             if (!scatterEntities) {
@@ -95,7 +96,7 @@ namespace EntityManager {
                 mem.CloseScatterHandle(scatterWeaponId);
             }
 
-            // Only update cache and view matrix if all reads succeed and there are valid entities
+            // Update entity cache if all reads succeed and there are valid entities
             if (allReadsSuccessful && playerCount > 0) {
                 std::vector<EntityData> new_entities;
                 for (int i = 1; i < playerCount && i < MAX_PLAYERS; i++) {
@@ -120,11 +121,10 @@ namespace EntityManager {
                 if (!new_entities.empty()) {
                     std::lock_guard<std::mutex> lock(entities_mutex);
                     entities = std::move(new_entities);
-                    Globals::ViewMatrix = newViewMatrix; // Only update if all reads succeed
                 }
-                // If new_entities is empty, do NOT update entities or view matrix!
+                // If new_entities is empty, do NOT update entities!
             }
-            // If any read failed, do NOT clear or update entities or view matrix!
+            // If any read failed, do NOT clear or update entities!
             std::this_thread::sleep_for(std::chrono::milliseconds(16));
         }
     }
