@@ -48,7 +48,7 @@
             1.0
         ],
         "Enabled": true,
-        "Health": false,
+        "Health": true,
         "Hitmarker": false,
         "HitmarkerColor": [
             1.0,
@@ -58,9 +58,9 @@
         ],
         "Name": true,
         "NameColor": [
-            0.04651165008544922,
             1.0,
-            0.0,
+            1.0,
+            1.0,
             1.0
         ],
         "TeamCheck": false,
@@ -74,8 +74,8 @@
         ],
         "Weapon": true,
         "WeaponColor": [
-            0.924505889415741,
-            0.22285711765289307,
+            1.0,
+            1.0,
             1.0,
             1.0
         ]

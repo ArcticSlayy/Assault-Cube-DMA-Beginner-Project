@@ -120,6 +120,41 @@ void ESP::Render(ImDrawList* drawList)
                 );
                 drawList->AddRect(ImVec2(box_x, box_y), ImVec2(box_x + box_width, box_y + box_height), boxColor, 0.0f, 0, 2.0f);
             }
+            // --- Health Bar ---
+            if (config.Visuals.Health) {
+                float healthPerc = std::clamp(entity.health / 100.0f, 0.0f, 1.0f);
+                float hb_height = box_height;
+                float hb_width = 6.0f;
+                float hb_x = box_x - hb_width - 4.0f;
+                float hb_y = box_y;
+                // Gradient: green (full) to red (empty)
+                ImU32 col_top = IM_COL32(0, 255, 0, 255); // Green
+                ImU32 col_bottom = IM_COL32(255, 0, 0, 255); // Red
+                float filled_height = hb_height * healthPerc;
+                float empty_height = hb_height - filled_height;
+                // Animate: smooth transition
+                static std::map<std::string, float> animHealthPerc;
+                float& animPerc = animHealthPerc[entity.name];
+                animPerc += (healthPerc - animPerc) * (ImGui::GetIO().DeltaTime * 12.0f); // Fast smooth
+                float anim_filled_height = hb_height * animPerc;
+                // Draw filled part (gradient)
+                drawList->AddRectFilledMultiColor(
+                    ImVec2(hb_x, hb_y + empty_height),
+                    ImVec2(hb_x + hb_width, hb_y + hb_height),
+                    col_top, col_top, col_bottom, col_bottom
+                );
+                // Draw empty part (background)
+                if (empty_height > 0.0f) {
+                    ImU32 bgColor = IM_COL32(40, 40, 40, 180);
+                    drawList->AddRectFilled(
+                        ImVec2(hb_x, hb_y),
+                        ImVec2(hb_x + hb_width, hb_y + empty_height),
+                        bgColor
+                    );
+                }
+                // Border
+                drawList->AddRect(ImVec2(hb_x, hb_y), ImVec2(hb_x + hb_width, hb_y + hb_height), IM_COL32(0,0,0,180), 2.0f);
+            }
             float textY = headScreenPos.y;
             if (config.Visuals.Name) {
                 ImU32 nameColor = IM_COL32(
