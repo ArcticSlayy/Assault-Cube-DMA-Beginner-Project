@@ -14,6 +14,8 @@ struct EntityData {
     int deaths;
     Vector3 headPosition;
     Vector3 footPosition;
+    int weaponClass; // Weapon type index
+    std::string weaponName; // Weapon name string
 };
 
 namespace EntityManager {

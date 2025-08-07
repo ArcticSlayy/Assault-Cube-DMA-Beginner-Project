@@ -7,6 +7,9 @@
 #include "Fonts/font_awesome.cpp"
 #include "Features.hpp"
 
+#include "imgui/imgui.h"
+#include "imgui/imgui_internal.h"
+
 ID3D11Device* Overlay::device = nullptr;
 
 ID3D11DeviceContext* Overlay::device_context = nullptr;
@@ -17,6 +20,10 @@ ID3D11RenderTargetView* Overlay::render_targetview = nullptr;
 
 HWND Overlay::overlay = nullptr;
 WNDCLASSEX Overlay::wc = { };
+ImFont* iconFont = nullptr; // Global/static for Overlay.cpp
+ImFont* titleFont = nullptr; // Title font (bold, 19pt)
+ImFont* tabFont = nullptr;   // Tab font (16.5pt)
+ImFont* featureFont = nullptr; // Feature font (15pt)
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
@@ -253,20 +260,31 @@ bool Overlay::CreateImGui()
 
 	// Font loading (only ONCE, after context is created)
 	ImGuiIO& IO = ImGui::GetIO();
-	ImFont* MainFont = IO.Fonts->AddFontFromMemoryCompressedTTF(IBMPlexMono_Medium_compressed_data, IBMPlexMono_Medium_compressed_size, 16, nullptr, IO.Fonts->GetGlyphRangesDefault());
-	static const ImWchar icon_ranges[] = { 0xf000, 0xf3ff, 0 };
-	ImFontConfig icons_config;
+    // Title font: Tahoma Bold, 36pt (make it much bigger)
+    titleFont = IO.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\TahomaBD.ttf", 35.0f, nullptr, IO.Fonts->GetGlyphRangesDefault());
+    // Tab font: Tahoma Regular, 20pt
+    tabFont = IO.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\Tahoma.ttf", 20.0f, nullptr, IO.Fonts->GetGlyphRangesDefault());
+    // Feature font: Tahoma Regular, 18pt
+    featureFont = IO.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\Tahoma.ttf", 18.0f, nullptr, IO.Fonts->GetGlyphRangesDefault());
+    // Main font (for default text)
+    ImFont* MainFont = tabFont; // Use tabFont as default
+    IO.FontDefault = MainFont;
+    //ImFont* MainFont = IO.Fonts->AddFontFromMemoryCompressedTTF(IBMPlexMono_Medium_compressed_data, IBMPlexMono_Medium_compressed_size, 16, nullptr, IO.Fonts->GetGlyphRangesDefault());
+    static const ImWchar icon_ranges[] = { 0xf000, 0xf8ff, 0 };
+    ImFontConfig icons_config;
 	icons_config.MergeMode = true;
 	icons_config.PixelSnapH = true;
 	icons_config.OversampleH = 3;
 	icons_config.OversampleV = 3;
-	IO.Fonts->AddFontFromMemoryCompressedTTF(font_awesome_data, font_awesome_size, 21.5f, &icons_config, icon_ranges);
-	IO.IniFilename = nullptr;
+	iconFont = IO.Fonts->AddFontFromMemoryCompressedTTF(font_awesome_data, font_awesome_size, 28.0f, &icons_config, icon_ranges); // Make icon bigger too
+    IO.IniFilename = nullptr;
 
 	// Build font atlas to ensure fonts are loaded
 	unsigned char* pixels = nullptr;
 	int width = 0, height = 0;
 	IO.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
+
+
 
 	return true;
 }
@@ -429,24 +447,33 @@ void Overlay::RenderMenu()
     // --- Gradient Title Bar ---
     ImVec2 winPos = ImGui::GetWindowPos();
     ImVec2 winSize = ImGui::GetWindowSize();
-    float titleBarHeight = 54.0f;
+    float titleBarHeight = 64.0f; // Make title bar tall enough for large font
+    float rounding = 16.0f;
     ImU32 titleLeft = ImGui::ColorConvertFloat4ToU32(ImVec4(0.13f, 0.15f, 0.18f, 1.0f));
     ImU32 titleRight = ImGui::ColorConvertFloat4ToU32(ImVec4(0.09f, 0.10f, 0.12f, 1.0f));
+    // Draw rounded rectangle only on top corners, spanning full window width
+    ImGui::GetWindowDrawList()->AddRectFilled(winPos, winPos + ImVec2(winSize.x, titleBarHeight), titleLeft, rounding, ImDrawFlags_RoundCornersTop);
     ImGui::GetWindowDrawList()->AddRectFilledMultiColor(winPos, winPos + ImVec2(winSize.x, titleBarHeight), titleLeft, titleRight, titleRight, titleLeft);
-    // --- Title Icon and Text ---
-    ImFont* iconFont = (io.Fonts->Fonts.size() > 1 && io.Fonts->Fonts[1] && io.Fonts->Fonts[1]->Scale > 0.0f) ? io.Fonts->Fonts[1] : io.Fonts->Fonts[0];
-    ImGui::SetCursorPos(ImVec2(28, 12));
+    // Center icon and text horizontally and vertically
+    float iconSize = iconFont ? iconFont->FontSize : 28.0f;
+    float textSize = titleFont ? titleFont->FontSize : 35.0f;
+    const char* titleText = "Aetherial";
+    ImVec2 textDim = ImGui::CalcTextSize(titleText);
+    float totalWidth = iconSize + 18.0f + textDim.x;
+    float centerX = (winSize.x - totalWidth) * 0.5f;
+    float centerY = (titleBarHeight - ImMax(iconSize, textSize)) * 0.5f;
+    float iconY = centerY + (textSize - iconSize) / 2.0f;
+    float textY = centerY + (iconSize - textSize) / 2.0f;
+    ImGui::SetCursorPos(ImVec2(centerX, iconY));
     ImGui::PushFont(iconFont);
-    ImGui::TextColored(ImVec4(0.22f, 0.40f, 0.80f, 1.0f), ICON_FA_CROWN);
+    ImGui::Text(ICON_FA_BOOK);
     ImGui::PopFont();
-    ImGui::SameLine();
-    ImGui::SetCursorPos(ImVec2(70, 16));
-    ImGui::PushFont(io.Fonts->Fonts[0]);
-    ImGui::SetWindowFontScale(1.3f); // Slightly smaller
-    ImGui::TextColored(ImVec4(0.95f, 0.96f, 0.98f, 1.0f), "Aetherial");
-    ImGui::SetWindowFontScale(1.0f);
+    ImGui::SameLine(0, 18.0f);
+    ImGui::SetCursorPosY(textY + centerY);
+    ImGui::PushFont(titleFont);
+    ImGui::TextColored(ImVec4(0.95f, 0.96f, 0.98f, 1.0f), "%s", titleText);
     ImGui::PopFont();
-    ImGui::Dummy(ImVec2(0, titleBarHeight - ImGui::GetFontSize()));
+    ImGui::Dummy(ImVec2(0, titleBarHeight - ImMax(iconSize, textSize)));
 
     // --- Sidebar ---
     static const char* tabIcons[] = {
@@ -457,12 +484,10 @@ void Overlay::RenderMenu()
     };
     ImGui::BeginChild("Sidebar", ImVec2(200, 0), true);
     {
-        ImFont* iconFont = (io.Fonts->Fonts.size() > 1 && io.Fonts->Fonts[1] && io.Fonts->Fonts[1]->Scale > 0.0f) ? io.Fonts->Fonts[1] : io.Fonts->Fonts[0];
         ImGui::PushFont(iconFont);
         float tabHeight = 54.0f;
         float iconTextSpacing = 16.0f;
         float tabPadding = 22.0f;
-        float tabFontSize = 22.0f; // Slightly smaller
         for (int i = 0; i < m_Tabs.size(); i++) {
             ImGui::PushID(i);
             bool selected = (m_iSelectedPage == i);
@@ -478,22 +503,16 @@ void Overlay::RenderMenu()
                 );
             }
             float startX = itemPos.x + tabPadding;
-            float centerY = itemPos.y + (tabHeight - tabFontSize) / 2;
+            // Center icon and text using their own font sizes
+            float iconY = itemPos.y + (tabHeight - (iconFont ? iconFont->FontSize : 21.5f)) / 2;
+            float textY = itemPos.y + (tabHeight - (tabFont ? tabFont->FontSize : 16.5f)) / 2;
             float iconX = startX;
-            float iconY = centerY;
-            float textX = iconX + tabFontSize + iconTextSpacing;
-            float textY = centerY;
+            float textX = iconX + (tabFont ? tabFont->FontSize : 16.5f) + iconTextSpacing;
             ImGui::SetCursorScreenPos(ImVec2(iconX, iconY));
-            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0,0));
-            ImGui::SetWindowFontScale(1.2f); // Slightly smaller
             ImGui::TextColored(selected ? ImVec4(0.22f, 0.40f, 0.80f, 1.0f) : ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "%s", tabIcons[i]);
-            ImGui::SetWindowFontScale(1.0f);
-            ImGui::PopStyleVar();
             ImGui::SetCursorScreenPos(ImVec2(textX, textY));
-            ImGui::PushFont(io.Fonts->Fonts[0]);
-            ImGui::SetWindowFontScale(1.1f); // Slightly smaller
+            ImGui::PushFont(tabFont);
             ImGui::TextColored(selected ? ImVec4(0.95f, 0.96f, 0.98f, 1.0f) : ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "%s", m_Tabs[i]);
-            ImGui::SetWindowFontScale(1.0f);
             ImGui::PopFont();
             ImGui::SetCursorScreenPos(itemPos);
             if (ImGui::InvisibleButton("##tab", itemSize)) {
@@ -511,6 +530,7 @@ void Overlay::RenderMenu()
     ImGui::BeginChild("MainContent", ImVec2(0, 0), true);
     {
         float fGroupWidth = (ImGui::GetWindowWidth() - style.WindowPadding.x * 2 - style.ItemSpacing.x * 8) / 2.0f + 60.0f;
+        ImGui::PushFont(featureFont);
         if (m_iSelectedPage == 0) // Aim
         {
             ImGui::Columns(2, nullptr, false);
@@ -810,6 +830,7 @@ void Overlay::RenderMenu()
             }
             ImGui::EndChild();
         }
+        ImGui::PopFont(); // featureFont
     }
     ImGui::EndChild();
     ImGui::SetCursorPosY(ImGui::GetWindowHeight() - ImGui::GetFrameHeight());
@@ -856,3 +877,5 @@ void Overlay::Destroy()
     DestroyDevice();
     DestroyOverlay();
 }
+
+

@@ -9,10 +9,8 @@ public:
     void Update(ImDrawList* drawList)
     {
         TIMER("ESP render");
-
         Render(drawList);
     }
-
     static ESP& Get()
     {
         static ESP instance;
