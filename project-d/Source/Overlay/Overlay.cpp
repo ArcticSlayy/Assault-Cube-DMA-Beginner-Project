@@ -3,6 +3,8 @@
 
 #include "Overlay.hpp"
 #include "Fonts/IBMPlexMono_Medium.h"
+#include "Fonts/font_awesome.h"
+#include "Fonts/font_awesome.cpp"
 #include "Features.hpp"
 
 ID3D11Device* Overlay::device = nullptr;
@@ -249,6 +251,23 @@ bool Overlay::CreateImGui()
 		return false;
 	}
 
+	// Font loading (only ONCE, after context is created)
+	ImGuiIO& IO = ImGui::GetIO();
+	ImFont* MainFont = IO.Fonts->AddFontFromMemoryCompressedTTF(IBMPlexMono_Medium_compressed_data, IBMPlexMono_Medium_compressed_size, 16, nullptr, IO.Fonts->GetGlyphRangesDefault());
+	static const ImWchar icon_ranges[] = { 0xf000, 0xf3ff, 0 };
+	ImFontConfig icons_config;
+	icons_config.MergeMode = true;
+	icons_config.PixelSnapH = true;
+	icons_config.OversampleH = 3;
+	icons_config.OversampleV = 3;
+	IO.Fonts->AddFontFromMemoryCompressedTTF(font_awesome_data, font_awesome_size, 21.5f, &icons_config, icon_ranges);
+	IO.IniFilename = nullptr;
+
+	// Build font atlas to ensure fonts are loaded
+	unsigned char* pixels = nullptr;
+	int width = 0, height = 0;
+	IO.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
+
 	return true;
 }
 
@@ -317,559 +336,523 @@ void Overlay::EndRender()
 
 void Overlay::StyleMenu(ImGuiIO& IO, ImGuiStyle& style)
 {
-	// Setup Dear ImGui style
-	ImGui::StyleColorsDark();
-
-	// Disable Ini file
-	IO.IniFilename = nullptr;
-
-    // Custom styles
-    style.WindowRounding    = 0;
-    style.ChildRounding     = 0;
-    style.FrameRounding     = 0;
-    style.GrabRounding      = 0;
-    style.PopupRounding     = 0;
-    style.TabRounding       = 0;
-    style.ScrollbarRounding = 0;
-
-    style.ButtonTextAlign   = { 0.5f, 0.5f };
-    style.WindowTitleAlign  = { 0.5f, 0.5f };
-    style.FramePadding      = { 8.0f, 8.0f };
-    style.WindowPadding     = { 10.0f, 10.0f };
-    style.ItemSpacing       = ImVec2(style.WindowPadding.x, style.WindowPadding.y * 0.75f);
-    style.ItemInnerSpacing  = { 10, 4 };
-
-    style.WindowBorderSize  = 1;
-    style.FrameBorderSize   = 1;
-    style.PopupBorderSize   = 1;
-
+    // Modern dark theme with blue accent
+    style.WindowRounding    = 14;
+    style.ChildRounding     = 14;
+    style.FrameRounding     = 8;
+    style.GrabRounding      = 8;
+    style.PopupRounding     = 8;
+    style.TabRounding       = 8;
+    style.ScrollbarRounding = 8;
+    style.WindowBorderSize  = 0;
+    style.FrameBorderSize   = 0;
+    style.PopupBorderSize   = 0;
     style.ScrollbarSize     = 12.f;
-    style.GrabMinSize       = style.FrameRounding;
-    
+    style.GrabMinSize       = 12.f;
+    style.WindowPadding     = ImVec2(24, 24);
+    style.FramePadding      = ImVec2(12, 8);
+    style.ItemSpacing       = ImVec2(12, 8);
+    style.ItemInnerSpacing  = ImVec2(8, 4);
+    style.WindowTitleAlign  = ImVec2(0.0f, 0.5f);
+    style.ButtonTextAlign   = ImVec2(0.5f, 0.5f);
     // Colors
-    style.Colors[ImGuiCol_WindowBg]             = ImAdd::HexToColorVec4(0x181818, 0.3f);
-    style.Colors[ImGuiCol_PopupBg]              = ImAdd::HexToColorVec4(0x181818, 1.0f);
-    style.Colors[ImGuiCol_ChildBg]              = ImAdd::HexToColorVec4(0x282828, 1.0f);
+    ImVec4 darkBg = ImVec4(0.07f, 0.08f, 0.10f, 1.00f);
+    ImVec4 blueAccent = ImVec4(0.22f, 0.40f, 0.80f, 1.00f);
+    style.Colors[ImGuiCol_WindowBg]             = darkBg;
+    style.Colors[ImGuiCol_ChildBg]              = ImVec4(0.10f, 0.11f, 0.13f, 1.00f);
+    style.Colors[ImGuiCol_FrameBg]              = ImVec4(0.13f, 0.14f, 0.16f, 1.00f);
+    style.Colors[ImGuiCol_FrameBgHovered]       = blueAccent;
+    style.Colors[ImGuiCol_FrameBgActive]        = blueAccent;
+    style.Colors[ImGuiCol_TitleBg]              = darkBg;
+    style.Colors[ImGuiCol_TitleBgActive]        = darkBg;
+    style.Colors[ImGuiCol_TitleBgCollapsed]     = darkBg;
+    style.Colors[ImGuiCol_Border]               = ImVec4(0.18f, 0.19f, 0.22f, 0.60f);
+    style.Colors[ImGuiCol_Button]               = ImVec4(0.13f, 0.14f, 0.16f, 1.00f);
+    style.Colors[ImGuiCol_ButtonHovered]        = blueAccent;
+    style.Colors[ImGuiCol_ButtonActive]         = blueAccent;
+    style.Colors[ImGuiCol_Header]               = ImVec4(0.13f, 0.14f, 0.16f, 1.00f);
+    style.Colors[ImGuiCol_HeaderHovered]        = blueAccent;
+    style.Colors[ImGuiCol_HeaderActive]         = blueAccent;
+    style.Colors[ImGuiCol_SliderGrab]           = blueAccent;
+    style.Colors[ImGuiCol_SliderGrabActive]     = ImVec4(0.32f, 0.50f, 0.90f, 1.00f);
+    style.Colors[ImGuiCol_CheckMark]            = blueAccent;
+    style.Colors[ImGuiCol_Text]                 = ImVec4(0.95f, 0.96f, 0.98f, 1.00f);
+    style.Colors[ImGuiCol_TextDisabled]         = ImVec4(0.60f, 0.62f, 0.65f, 1.00f);
+    style.Colors[ImGuiCol_Separator]            = ImVec4(0.18f, 0.19f, 0.22f, 0.60f);
+    style.Colors[ImGuiCol_PopupBg]              = ImVec4(0.10f, 0.11f, 0.13f, 1.00f);
+    style.Colors[ImGuiCol_Tab]                  = ImVec4(0.13f, 0.14f, 0.16f, 1.00f);
+    style.Colors[ImGuiCol_TabHovered]           = blueAccent;
+    style.Colors[ImGuiCol_TabActive]            = blueAccent;
+    style.Colors[ImGuiCol_TabUnfocused]         = ImVec4(0.13f, 0.14f, 0.16f, 1.00f);
+    style.Colors[ImGuiCol_TabUnfocusedActive]   = blueAccent;
+    style.Colors[ImGuiCol_DragDropTarget]       = blueAccent;
+    style.Colors[ImGuiCol_NavHighlight]         = blueAccent;
+    style.Colors[ImGuiCol_ScrollbarBg]          = darkBg;
+    style.Colors[ImGuiCol_ScrollbarGrab]        = ImVec4(0.13f, 0.14f, 0.16f, 1.00f);
+    style.Colors[ImGuiCol_ScrollbarGrabHovered] = blueAccent;
+    style.Colors[ImGuiCol_ScrollbarGrabActive]  = blueAccent;
+}
 
-    style.Colors[ImGuiCol_Text]                 = ImAdd::HexToColorVec4(0xFFFFFF, 1.0f);
-    style.Colors[ImGuiCol_CheckMark]            = style.Colors[ImGuiCol_Text];
-    style.Colors[ImGuiCol_TextDisabled]         = ImAdd::HexToColorVec4(0xA3A3A3, 1.0f);
+bool ToggleSwitch(const char* label, bool* v, float scale = 0.55f)
+{
+    // Smaller toggle, always show label, horizontal layout
+    ImGuiStyle& style = ImGui::GetStyle();
+    float height = ImGui::GetFrameHeight() * scale;
+    float width = height * 1.6f;
+    float spacing = style.ItemInnerSpacing.x;
+    ImVec2 p = ImGui::GetCursorScreenPos();
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    ImGui::InvisibleButton(label, ImVec2(width + ImGui::CalcTextSize(label).x + spacing, height));
+    if (ImGui::IsItemClicked())
+        *v = !*v;
+    float t = *v ? 1.0f : 0.0f;
+    ImU32 col_bg = ImGui::GetColorU32(*v ? ImVec4(0.22f, 0.40f, 0.80f, 1.0f) : ImVec4(0.18f, 0.19f, 0.22f, 1.0f));
+    // Draw label
+    draw_list->AddText(p, ImGui::GetColorU32(ImGuiCol_Text), label);
+    // Draw toggle
+    ImVec2 togglePos = p + ImVec2(ImGui::CalcTextSize(label).x + spacing, 0);
+    draw_list->AddRectFilled(togglePos, togglePos + ImVec2(width, height), col_bg, height * 0.5f);
+    draw_list->AddCircleFilled(togglePos + ImVec2(height * 0.5f + t * (width - height), height * 0.5f), height * 0.4f, ImGui::GetColorU32(ImVec4(0.95f, 0.96f, 0.98f, 1.0f)));
+    return *v;
+}
 
-    style.Colors[ImGuiCol_SliderGrab]           = ImAdd::HexToColorVec4(0x545070, 1.0f);
-    style.Colors[ImGuiCol_SliderGrabActive]     = ImAdd::HexToColorVec4(0x45425D, 1.0f);
-    
-    style.Colors[ImGuiCol_ScrollbarGrab]        = ImAdd::HexToColorVec4(0x181818, 1.0f);
-    style.Colors[ImGuiCol_ScrollbarGrabHovered] = ImAdd::HexToColorVec4(0x181818, 1.0f);
-    style.Colors[ImGuiCol_ScrollbarGrabActive]  = ImAdd::HexToColorVec4(0x181818, 1.0f);
+void Overlay::RenderMenu()
+{
+    ImGuiStyle& style = ImGui::GetStyle();
+    ImGuiIO& io = ImGui::GetIO();
+    StyleMenu(io, style);
+    float OverlayFps = ImGui::GetIO().Framerate;
 
-    style.Colors[ImGuiCol_ScrollbarBg]          = ImVec4(0, 0, 0, 0);
+    ImGui::SetNextWindowSize(ImVec2(900, 600), ImGuiCond_Always);
+    ImGui::Begin("Aetherial", &shouldRenderMenu, ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDecoration);
 
-    style.Colors[ImGuiCol_Border]               = ImAdd::HexToColorVec4(0x060606, 1.0f);
-    style.Colors[ImGuiCol_Separator]            = style.Colors[ImGuiCol_Border];
+    // --- Gradient Title Bar ---
+    ImVec2 winPos = ImGui::GetWindowPos();
+    ImVec2 winSize = ImGui::GetWindowSize();
+    float titleBarHeight = 54.0f;
+    ImU32 titleLeft = ImGui::ColorConvertFloat4ToU32(ImVec4(0.13f, 0.15f, 0.18f, 1.0f));
+    ImU32 titleRight = ImGui::ColorConvertFloat4ToU32(ImVec4(0.09f, 0.10f, 0.12f, 1.0f));
+    ImGui::GetWindowDrawList()->AddRectFilledMultiColor(winPos, winPos + ImVec2(winSize.x, titleBarHeight), titleLeft, titleRight, titleRight, titleLeft);
+    // --- Title Icon and Text ---
+    ImFont* iconFont = (io.Fonts->Fonts.size() > 1 && io.Fonts->Fonts[1] && io.Fonts->Fonts[1]->Scale > 0.0f) ? io.Fonts->Fonts[1] : io.Fonts->Fonts[0];
+    ImGui::SetCursorPos(ImVec2(28, 12));
+    ImGui::PushFont(iconFont);
+    ImGui::TextColored(ImVec4(0.22f, 0.40f, 0.80f, 1.0f), ICON_FA_CROWN);
+    ImGui::PopFont();
+    ImGui::SameLine();
+    ImGui::SetCursorPos(ImVec2(70, 16));
+    ImGui::PushFont(io.Fonts->Fonts[0]);
+    ImGui::SetWindowFontScale(1.3f); // Slightly smaller
+    ImGui::TextColored(ImVec4(0.95f, 0.96f, 0.98f, 1.0f), "Aetherial");
+    ImGui::SetWindowFontScale(1.0f);
+    ImGui::PopFont();
+    ImGui::Dummy(ImVec2(0, titleBarHeight - ImGui::GetFontSize()));
 
-    style.Colors[ImGuiCol_Button]               = ImAdd::HexToColorVec4(0x181818, 1.0f);
-    style.Colors[ImGuiCol_ButtonHovered]        = ImAdd::HexToColorVec4(0x181818, 0.7f);
-    style.Colors[ImGuiCol_ButtonActive]         = ImAdd::HexToColorVec4(0x181818, 0.5f);
+    // --- Sidebar ---
+    static const char* tabIcons[] = {
+        ICON_FA_CROSSHAIRS, // Aim
+        ICON_FA_EYE,        // Visuals
+        ICON_FA_COG,        // Config
+        ICON_FA_INFO_CIRCLE // Info
+    };
+    ImGui::BeginChild("Sidebar", ImVec2(200, 0), true);
+    {
+        ImFont* iconFont = (io.Fonts->Fonts.size() > 1 && io.Fonts->Fonts[1] && io.Fonts->Fonts[1]->Scale > 0.0f) ? io.Fonts->Fonts[1] : io.Fonts->Fonts[0];
+        ImGui::PushFont(iconFont);
+        float tabHeight = 54.0f;
+        float iconTextSpacing = 16.0f;
+        float tabPadding = 22.0f;
+        float tabFontSize = 22.0f; // Slightly smaller
+        for (int i = 0; i < m_Tabs.size(); i++) {
+            ImGui::PushID(i);
+            bool selected = (m_iSelectedPage == i);
+            ImVec2 itemSize(180, tabHeight);
+            ImVec2 itemPos = ImGui::GetCursorScreenPos();
+            ImRect itemRect(itemPos, itemPos + itemSize);
+            if (selected) {
+                ImU32 colLeft = ImGui::ColorConvertFloat4ToU32(ImVec4(0.22f, 0.40f, 0.80f, 0.45f));
+                ImU32 colRight = ImGui::ColorConvertFloat4ToU32(ImVec4(0.22f, 0.40f, 0.80f, 0.18f));
+                ImGui::GetWindowDrawList()->AddRectFilledMultiColor(
+                    itemRect.Min, itemRect.Max,
+                    colLeft, colRight, colRight, colLeft
+                );
+            }
+            float startX = itemPos.x + tabPadding;
+            float centerY = itemPos.y + (tabHeight - tabFontSize) / 2;
+            float iconX = startX;
+            float iconY = centerY;
+            float textX = iconX + tabFontSize + iconTextSpacing;
+            float textY = centerY;
+            ImGui::SetCursorScreenPos(ImVec2(iconX, iconY));
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0,0));
+            ImGui::SetWindowFontScale(1.2f); // Slightly smaller
+            ImGui::TextColored(selected ? ImVec4(0.22f, 0.40f, 0.80f, 1.0f) : ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "%s", tabIcons[i]);
+            ImGui::SetWindowFontScale(1.0f);
+            ImGui::PopStyleVar();
+            ImGui::SetCursorScreenPos(ImVec2(textX, textY));
+            ImGui::PushFont(io.Fonts->Fonts[0]);
+            ImGui::SetWindowFontScale(1.1f); // Slightly smaller
+            ImGui::TextColored(selected ? ImVec4(0.95f, 0.96f, 0.98f, 1.0f) : ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "%s", m_Tabs[i]);
+            ImGui::SetWindowFontScale(1.0f);
+            ImGui::PopFont();
+            ImGui::SetCursorScreenPos(itemPos);
+            if (ImGui::InvisibleButton("##tab", itemSize)) {
+                m_iSelectedPage = i;
+            }
+            ImGui::PopID();
+            ImGui::Dummy(ImVec2(0, 6));
+        }
+        ImGui::PopFont();
+    }
+    ImGui::EndChild();
+    ImGui::SameLine();
 
-    style.Colors[ImGuiCol_FrameBg]              = ImAdd::HexToColorVec4(0x181818, 1.0f);
-    style.Colors[ImGuiCol_FrameBgHovered]       = ImAdd::HexToColorVec4(0x181818, 0.7f);
-    style.Colors[ImGuiCol_FrameBgActive]        = ImAdd::HexToColorVec4(0x181818, 0.5f);
+    // --- Main Content ---
+    ImGui::BeginChild("MainContent", ImVec2(0, 0), true);
+    {
+        float fGroupWidth = (ImGui::GetWindowWidth() - style.WindowPadding.x * 2 - style.ItemSpacing.x * 8) / 2.0f + 60.0f;
+        if (m_iSelectedPage == 0) // Aim
+        {
+            ImGui::Columns(2, nullptr, false);
 
-    style.Colors[ImGuiCol_Header]               = ImAdd::HexToColorVec4(0x282828, 1.0f);
-    style.Colors[ImGuiCol_HeaderHovered]        = ImAdd::HexToColorVec4(0x282828, 0.7f);
-    style.Colors[ImGuiCol_HeaderActive]         = ImAdd::HexToColorVec4(0x282828, 0.5f);
+            float yStart = ImGui::GetCursorPosY();
 
-	static bool bInit = false;
-	if (!bInit)
-	{
-		m_iSelectedPage = 0;
+            // Left: Aimbot
+            ImGui::SetCursorPosY(yStart);
+            ImGui::Text("Aimbot");
+            ImGui::Separator();
+            ImGui::BeginChild("AimbotSection", ImVec2(0, 340), ImGuiChildFlags_Border);
+            {
+                ToggleSwitch("Enable", &config.Aim.Aimbot);
+                if (config.Aim.Aimbot)
+                {
+                    if (ProcInfo::KmboxInitialized)
+                    {
+                        ToggleSwitch("Draw FOV", &config.Aim.DrawFov);
+                        if (config.Aim.DrawFov)
+                        {
+                            ImAdd::ColorEdit4("Fov Color", (float*)&config.Aim.AimbotFovColor);
+                        }
+                        ToggleSwitch("Aim Visible", &config.Aim.AimVisible);
+                        ToggleSwitch("Aim Teammates", &config.Aim.AimFriendly);
+                        ImAdd::KeyBindOptions KeyMode = (ImAdd::KeyBindOptions)config.Aim.AimbotKeyMode;
+                        ImAdd::KeyBind("Aimbot Key", &config.Aim.AimbotKey, 0, &KeyMode);
+                        ImAdd::SliderFloat("Aimbot Fov", &config.Aim.AimbotFov, 0.0f, 180.0f);
+                        ImAdd::SliderFloat("Aimbot Smooth", &config.Aim.AimbotSmooth, 0.0f, 100.0f);
+                    }
+                    else
+                    {
+                        ImGui::TextColored(ImVec4(1, 0, 0, 1), "KMBOX not connected.");
+                    }
+                }
+            }
+            ImGui::EndChild();
 
-		m_Tabs.push_back("Aim");     // MenuPage_Aiming
-		m_Tabs.push_back("Visuals");    // MenuPage_Visuals
-        m_Tabs.push_back("Entities"); // MenuPage_Entities
-		m_Tabs.push_back("Config");    // MenuPage_Configs
-		m_Tabs.push_back("Info");       // MenuPage_Info
+            ImGui::NextColumn();
 
-		ImFont* MainFont = IO.Fonts->AddFontFromMemoryCompressedTTF(IBMPlexMono_Medium_compressed_data, IBMPlexMono_Medium_compressed_size, 14, nullptr, IO.Fonts->GetGlyphRangesDefault());
+            // Right: Triggerbot
+            ImGui::SetCursorPosY(yStart); // Use the same yStart as left column
+            ImGui::Text("Triggerbot");
+            ImGui::Separator();
+            ImGui::BeginChild("TriggerbotSection", ImVec2(0, 340), ImGuiChildFlags_Border);
+            {
+                ToggleSwitch("Enable", &config.Aim.Trigger);
+                if (config.Aim.Trigger)
+                {
+                    if (ProcInfo::KmboxInitialized)
+                    {
+                        ImAdd::KeyBindOptions KeyMode = (ImAdd::KeyBindOptions)config.Aim.TriggerKeyMode;
+                        ImAdd::KeyBind("Trigger Key", &config.Aim.TriggerKey, 0, &KeyMode);
+                        ImAdd::SliderInt("Trigger Delay (ms)", &config.Aim.TriggerDelay, 0, 250);
+                    }
+                    else
+                    {
+                        ImGui::TextColored(ImVec4(1, 0, 0, 1), "KMBOX not connected.");
+                    }
+                }
+            }
+            ImGui::EndChild();
 
-		bInit = true;
-	}
+            ImGui::Columns(1);
+        }
+        else if (m_iSelectedPage == 1) // Visuals
+        {
+            ImGui::Text("Visuals");
+            ImGui::Separator();
+            ImGui::BeginChild("Visuals", ImVec2(0, 0), ImGuiChildFlags_Border);
+            {
+                ToggleSwitch("Enable", &config.Visuals.Enabled);
+                if (config.Visuals.Enabled)
+                {
+                    ImAdd::SeparatorText("General");
+                    ImGui::BeginGroup();
+                    ToggleSwitch("Watermark", &config.Visuals.Watermark);
+                    if (config.Visuals.Watermark)
+                        ImAdd::ColorEdit4("Watermark Color", (float*)&config.Visuals.WatermarkColor);
+                    ToggleSwitch("Background", &config.Visuals.Background);
+                    ImGui::EndGroup();
+                    ImAdd::SeparatorText("Visual");
+                    ImGui::BeginGroup();
+                    ToggleSwitch("VSync", &config.Visuals.VSync);
+                    ToggleSwitch("Team Check", &config.Visuals.TeamCheck);
+                    ToggleSwitch("Visible Check", &config.Visuals.VisibleCheck);
+                    ToggleSwitch("Hitmarker", &config.Visuals.Hitmarker);
+                    if (config.Visuals.Hitmarker)
+                        ImAdd::ColorEdit4("Hitmarker Color", (float*)&config.Visuals.HitmarkerColor);
+                    ImGui::EndGroup();
+                    ImAdd::SeparatorText("Players");
+                    ImGui::BeginGroup();
+                    ToggleSwitch("Name", &config.Visuals.Name);
+                    if (config.Visuals.Name)
+                        ImAdd::ColorEdit4("Name Color", (float*)&config.Visuals.NameColor);
+                    ToggleSwitch("Health", &config.Visuals.Health);
+                    ToggleSwitch("Box", &config.Visuals.Box);
+                    if (config.Visuals.Box)
+                    {
+                        ImAdd::ColorEdit4("Box Color", (float*)&config.Visuals.BoxColor);
+                        ImAdd::ColorEdit4("Box Color Visible", (float*)&config.Visuals.BoxColorVisible);
+                    }
+                    ToggleSwitch("Weapon", &config.Visuals.Weapon);
+                    if (config.Visuals.Weapon)
+                        ImAdd::ColorEdit4("Weapon Color", (float*)&config.Visuals.WeaponColor);
+                    ToggleSwitch("Bones", &config.Visuals.Bones);
+                    if (config.Visuals.Bones)
+                        ImAdd::ColorEdit4("Bones Color", (float*)&config.Visuals.BonesColor);
+                    ImGui::EndGroup();
+                }
+            }
+            ImGui::EndChild();
+        }
+        else if (m_iSelectedPage == 2) // Config
+        {
+            ImGui::BeginChild("Configs", ImVec2(0, 0), ImGuiChildFlags_Border, ImGuiWindowFlags_MenuBar);
+            {
+                if (ImGui::BeginMenuBar()) {
+                    ImGui::Text("Configs");
+                    ImGui::EndMenuBar();
+                }
+
+                static char configName[128] = "";
+                static std::vector<std::string> configFiles;
+                static int lastSelectedTab = -1;
+                static bool menuWasOpen = false;
+                // Refresh config list when menu is opened or tab is switched to Config
+                if (shouldRenderMenu && !menuWasOpen) {
+                    menuWasOpen = true;
+                    configFiles = config.ListConfigs("configs/");
+                }
+                if (!shouldRenderMenu) {
+                    menuWasOpen = false;
+                }
+                if (m_iSelectedPage == MenuPage_Config && lastSelectedTab != MenuPage_Config) {
+                    configFiles = config.ListConfigs("configs/");
+                }
+                lastSelectedTab = m_iSelectedPage;
+
+                if (ImAdd::Button("Refresh"))
+                {
+                    configFiles = config.ListConfigs("configs/");
+                    LOG_INFO("Refreshed config list");
+                }
+
+                ImGui::Separator();
+
+                // Config List
+                if (ImGui::BeginListBox("Config list"))
+                {
+                    if (configFiles.empty())
+                    {
+                        ImGui::Selectable("No configs found", false, ImGuiSelectableFlags_Disabled);
+                    }
+                    else
+                    {
+                        for (const auto& file : configFiles)
+                        {
+                            bool isSelected = (file == configName);
+                            if (ImGui::Selectable(file.c_str(), isSelected))
+                            {
+                                strcpy(configName, file.c_str());
+                                LOG_INFO("Selected config: {}", configName);
+                            }
+
+                            if (isSelected)
+                            {
+                                ImGui::SetItemDefaultFocus();
+                            }
+                        }
+                    }
+                    ImGui::EndListBox();
+                }
+
+                // Config Name Input
+                ImGui::InputText("Config Name", configName, IM_ARRAYSIZE(configName));
+
+                // Control Buttons
+                float buttonWidth = 75.0f;
+                float buttonSpacing = 10.0f;
+                ImGui::Dummy(ImVec2(0.0f, 5.0f));
+
+                if (ImAdd::Button("Load", ImVec2(buttonWidth, 0)))
+                {
+                    std::string filePath = "configs/" + std::string(configName);
+                    if (!config.LoadFromFile(filePath))
+                    {
+                        LOG_ERROR("Failed to load config: {}", filePath);
+                    }
+                    else
+                    {
+                        LOG_INFO("Loaded config: {}", filePath);
+                    }
+                }
+
+                ImGui::SameLine(0.0f, buttonSpacing);
+
+                if (ImAdd::Button("Save", ImVec2(buttonWidth, 0)))
+                {
+                    std::string filePath = "configs/" + std::string(configName);
+                    if (!config.SaveToFile(filePath))
+                    {
+                        LOG_ERROR("Failed to save config: {}", filePath);
+                    }
+                    else
+                    {
+                        LOG_INFO("Saved config: {}", filePath);
+                    }
+                }
+
+                ImGui::SameLine(0.0f, buttonSpacing);
+
+                if (ImAdd::Button("Delete", ImVec2(buttonWidth, 0)))
+                {
+                    std::string filePath = "configs/" + std::string(configName);
+                    if (!config.DeleteConfigFile(filePath))
+                    {
+                        LOG_ERROR("Failed to delete config: {}", filePath);
+                    }
+                    else
+                    {
+                        LOG_INFO("Deleted config: {}", filePath);
+                        configFiles = config.ListConfigs("configs/");
+                    }
+                }
+
+                ImGui::SameLine(0.0f, buttonSpacing);
+
+                if (ImAdd::Button("Import", ImVec2(buttonWidth, 0)))
+                {
+                    if (config.LoadFromClipboard())
+                    {
+                        LOG_INFO("Config imported from clipboard");
+                    }
+                    else
+                    {
+                        LOG_ERROR("Failed to import config from clipboard");
+                    }
+                }
+
+                ImGui::SameLine(0.0f, buttonSpacing);
+
+                if (ImAdd::Button("Unload", ImVec2(buttonWidth, 0)))
+                {
+                    Globals::Running = false;
+                    shouldRun = false;
+                    ExitProcess(0); // Immediate exit, let OS cleanup
+                }
+            }
+            ImGui::EndChild();
+        }
+        else if (m_iSelectedPage == 3) // Info
+        {
+            ImGui::BeginChild("Info", ImVec2(0, 0), ImGuiChildFlags_Border, ImGuiWindowFlags_MenuBar);
+            {
+                if (ImGui::BeginMenuBar()) {
+                    ImGui::Text("Info");
+                    ImGui::EndMenuBar();
+                }
+
+                ImAdd::SeparatorText("Hardware");
+
+                ImGui::Text("DMA:");
+                ImGui::SameLine();
+                ImGui::TextColored(ProcInfo::DmaInitialized ? ImVec4(0, 1, 0, 1)/* green */ : ImVec4(1, 0, 0, 1)/* red */, "%s", ProcInfo::DmaInitialized ? "Connected" : "Disconnected");
+
+                ImGui::Text("KMBOX:");
+                ImGui::SameLine();
+                ImGui::TextColored(ProcInfo::KmboxInitialized ? ImVec4(0, 1, 0, 1)/* green */ : ImVec4(1, 0, 0, 1)/* red */, "%s", ProcInfo::KmboxInitialized ? "Connected" : "Disconnected");
+
+                ImAdd::SeparatorText("Game");
+
+                ImGui::Text("Client:");
+                ImGui::SameLine();
+                ImGui::Text("0x%llx", Globals::ClientBase);
+
+                ImAdd::SeparatorText("Cheat");
+
+                ImGui::Text("Overlay FPS: %.2f", OverlayFps);
+
+                float buttonWidth = 100.0f;
+                float buttonSpacing = 20.0f;
+                ImGui::SetCursorPosX((ImGui::GetWindowSize().x - 2 * buttonWidth - buttonSpacing) / 2);
+
+                if (ImAdd::Button("Open folder", ImVec2(buttonWidth, 0)))
+                {
+                    ShellExecuteA(nullptr, "open", "explorer.exe", ".\\", nullptr, SW_SHOW);
+                }
+
+                ImGui::SameLine();
+
+                if (ImAdd::Button("Unload", ImVec2(buttonWidth, 0)))
+                {
+                    Globals::Running = false;
+                    shouldRun = false;
+                    ExitProcess(0); // Immediate exit, let OS cleanup
+                }
+            }
+            ImGui::EndChild();
+        }
+    }
+    ImGui::EndChild();
+    ImGui::SetCursorPosY(ImGui::GetWindowHeight() - ImGui::GetFrameHeight());
+    ImGui::BeginChild("Footer", ImVec2(0, 0), 0, ImGuiWindowFlags_NoBackground);
+    {
+        ImGui::GetWindowDrawList()->AddRectFilled(ImGui::GetWindowPos(), ImGui::GetWindowPos() + ImGui::GetWindowSize(), ImGui::GetColorU32(ImGuiCol_ChildBg), style.WindowRounding, ImDrawFlags_RoundCornersBottom);
+        ImGui::GetWindowDrawList()->AddLine(ImGui::GetWindowPos() + ImVec2(style.WindowBorderSize, 0), ImGui::GetWindowPos() + ImVec2(ImGui::GetWindowWidth() - style.WindowBorderSize, 0), ImGui::GetColorU32(ImGuiCol_Border), style.WindowBorderSize);
+        ImGui::GetWindowDrawList()->AddText(ImGui::GetWindowPos() + style.FramePadding, ImGui::GetColorU32(ImGuiCol_Text), "Build: Developer");
+        ImGui::GetWindowDrawList()->AddText(ImGui::GetWindowPos() + ImVec2(ImGui::GetWindowWidth() - ImGui::CalcTextSize("Expires: Never").x - style.FramePadding.x, style.FramePadding.y), ImGui::GetColorU32(ImGuiCol_TextDisabled), "Expires: Never");
+    }
+    ImGui::EndChild();
+    ImGui::End();
 }
 
 bool Overlay::Create()
 {
-	shouldRun = true;
-	shouldRenderMenu = false;
+    shouldRun = true;
+    shouldRenderMenu = false;
 
-	if (!CreateOverlay())
-		return false;
+    // Initialize tabs only once
+    m_Tabs.clear();
+    m_Tabs.push_back("Aim");
+    m_Tabs.push_back("Visuals");
+    m_Tabs.push_back("Config");
+    m_Tabs.push_back("Info");
+    m_iSelectedPage = 0;
 
-	if (!CreateDevice())
-		return false;
+    if (!CreateOverlay())
+        return false;
 
-	if (!CreateImGui())
-		return false;
+    if (!CreateDevice())
+        return false;
 
-	SetForeground(GetConsoleWindow());
-	return true;
+    if (!CreateImGui())
+        return false;
+
+    SetForeground(GetConsoleWindow());
+    return true;
 }
 
 void Overlay::Destroy()
 {
-	DestroyImGui();
-	DestroyDevice();
-	DestroyOverlay();
-}
-
-
-void Overlay::RenderMenu()
-{
-	ImGuiStyle& style = ImGui::GetStyle();
-	ImGuiIO& io = ImGui::GetIO();
-
-	ImGui::SetNextWindowSize(ImVec2(570, 500), ImGuiCond_Always);
-	ImGui::Begin(
-		"Awhare",
-		&shouldRenderMenu,
-		ImGuiWindowFlags_NoSavedSettings |
-		ImGuiWindowFlags_AlwaysAutoResize |
-		ImGuiWindowFlags_NoDecoration
-	);
-
-	StyleMenu(io, style);
-
-	float OverlayFps = ImGui::GetIO().Framerate;
-
-	ImGui::SetCursorPosX(ImGui::GetWindowWidth() / 2 - ImGui::CalcTextSize("Awhare").x / 2);
-	ImGui::Text("Awhare");
-
-	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-	ImGui::PushStyleColor(ImGuiCol_ChildBg, style.Colors[ImGuiCol_FrameBg]);
-	ImGui::BeginChild("Main", ImVec2(0, 0), ImGuiCol_Border);
-	ImGui::PopStyleColor();
-	ImGui::PopStyleVar();
-	{
-		ImGui::BeginChild("MenuBar", ImVec2(0, ImGui::GetFrameHeight()), 0, ImGuiWindowFlags_NoBackground);
-		{
-			ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
-			{
-				int RadioWidth = ImGui::GetWindowWidth() / m_Tabs.size();
-
-				for (int i = 0; i < m_Tabs.size(); i++)
-				{
-					ImAdd::RadioFrame(m_Tabs[i], &m_iSelectedPage, i, i % 2 == 0, ImVec2(i == m_Tabs.size() - 1 ? -0.1f : RadioWidth, ImGui::GetWindowHeight()));
-					ImGui::SameLine();
-				}
-			}
-			ImGui::PopStyleVar();
-
-			ImGui::GetWindowDrawList()->AddLine(ImGui::GetWindowPos() + ImVec2(style.WindowBorderSize, ImGui::GetWindowHeight() - style.WindowBorderSize), ImGui::GetWindowPos() + ImVec2(ImGui::GetWindowWidth() - style.WindowBorderSize, ImGui::GetWindowHeight() - style.WindowBorderSize), ImGui::GetColorU32(ImGuiCol_Border), style.WindowBorderSize);
-		}
-		ImGui::EndChild();
-		ImGui::SetCursorPosY(ImGui::GetFrameHeight());
-		ImGui::BeginChild("Content", ImVec2(0, ImGui::GetWindowHeight() - ImGui::GetFrameHeight() * 2), ImGuiChildFlags_Border, ImGuiWindowFlags_NoBackground);
-		{
-			float fGroupWidth = (ImGui::GetWindowWidth() - style.WindowPadding.x * 2 - style.ItemSpacing.x * 15) / 2;
-
-			if (m_iSelectedPage == MenuPage_Aim)
-			{
-				ImGui::BeginGroup(); // Left group
-				{
-					ImGui::BeginChild("Aimbot", ImVec2(fGroupWidth,
-						ImGui::GetFrameHeight() + // MenuBar
-						style.WindowPadding.y * 2 + // child padding
-						style.ItemSpacing.x * 15 + // spacing
-						ImGui::GetFontSize() * 10 // checkbox + separators
-					), ImGuiChildFlags_Border, ImGuiWindowFlags_MenuBar);
-					{
-						if (ImGui::BeginMenuBar()) {
-							ImGui::SetCursorPos(style.FramePadding);
-							ImAdd::CheckBox("Aimbot##Enable", &config.Aim.Aimbot);
-							ImGui::EndMenuBar();
-						}
-
-						if (config.Aim.Aimbot)
-						{
-							if (ProcInfo::KmboxInitialized)
-							{
-								ImAdd::CheckBox("Draw FOV", &config.Aim.DrawFov);
-								if (config.Aim.DrawFov)
-								{
-									ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::GetFontSize() * 2 - style.WindowPadding.x * 2);
-									ImAdd::ColorEdit4("##FovColor", (float*)&config.Aim.AimbotFovColor);
-								}
-
-								ImAdd::CheckBox("Aim Visible", &config.Aim.AimVisible);
-								ImAdd::CheckBox("Aim Teammates", &config.Aim.AimFriendly);
-
-								ImAdd::KeyBindOptions KeyMode = (ImAdd::KeyBindOptions)config.Aim.AimbotKeyMode;
-								ImAdd::KeyBind("Aimbot Key", &config.Aim.AimbotKey, 0, &KeyMode);
-
-								ImAdd::SliderFloat("Aimbot Fov", &config.Aim.AimbotFov, 0.0f, 180.0f);
-								ImAdd::SliderFloat("Aimbot Smooth", &config.Aim.AimbotSmooth, 0.0f, 100.0f);
-							}
-							else
-							{
-								ImGui::SetCursorPos(ImVec2(ImGui::GetWindowWidth(), ImGui::GetWindowHeight() - ImGui::GetFrameHeight()) / 2 - ImGui::CalcTextSize("KMBOX not connected.") / 2 + ImVec2(0, ImGui::GetFrameHeight()));
-								ImGui::TextColored(ImVec4(1, 0, 0, 1), "KMBOX not connected.");
-							}
-						}
-					}
-					ImGui::EndChild();
-				}
-				ImGui::EndGroup();
-				ImGui::SameLine();
-				ImGui::BeginGroup();
-				{
-					ImGui::BeginChild("Trigger", ImVec2(fGroupWidth,
-						ImGui::GetFrameHeight() + // MenuBar
-						style.WindowPadding.y * 2 + // child padding
-						(style.ItemSpacing.x * 15) + // spacing
-						ImGui::GetFontSize() * 10 // checkbox + separators
-					), ImGuiChildFlags_Border, ImGuiWindowFlags_MenuBar);
-					{
-						if (ImGui::BeginMenuBar()) {
-							ImGui::SetCursorPos(style.FramePadding);
-							ImAdd::CheckBox("Trigger##Enable", &config.Aim.Trigger);
-							ImGui::EndMenuBar();
-						}
-
-						if (config.Aim.Trigger)
-						{
-							if (ProcInfo::KmboxInitialized)
-							{
-								ImAdd::CheckBox("Trigger##Enable", &config.Aim.Trigger);
-
-								ImAdd::KeyBindOptions KeyMode = (ImAdd::KeyBindOptions)config.Aim.TriggerKeyMode;
-								ImAdd::KeyBind("Trigger Key", &config.Aim.TriggerKey, 0, &KeyMode);
-
-								ImAdd::SliderInt("Trigger Delay (ms)", &config.Aim.TriggerDelay, 0, 250);
-							}
-							else
-							{
-								ImGui::SetCursorPos(ImVec2(ImGui::GetWindowWidth(), ImGui::GetWindowHeight() - ImGui::GetFrameHeight()) / 2 - ImGui::CalcTextSize("KMBOX not connected.") / 2 + ImVec2(0, ImGui::GetFrameHeight()));
-								ImGui::TextColored(ImVec4(1, 0, 0, 1), "KMBOX not connected.");
-							}
-						}
-					}
-					ImGui::EndChild();
-				}
-				ImGui::EndGroup();
-			}
-
-			else if (m_iSelectedPage == MenuPage_Visuals)
-			{
-				ImGui::BeginChild("Visuals", ImVec2(fGroupWidth,
-					ImGui::GetFrameHeight() + // MenuBar
-					style.WindowPadding.y * 2 + // child padding
-					style.ItemSpacing.x * 15 + // spacing
-					ImGui::GetFontSize() * 10 // checkbox + separators
-				), ImGuiChildFlags_Border, ImGuiWindowFlags_MenuBar);
-				{
-					if (ImGui::BeginMenuBar()) {
-						ImGui::SetCursorPos(style.FramePadding);
-						ImAdd::CheckBox("Visuals##Enable", &config.Visuals.Enabled);
-						ImGui::EndMenuBar();
-					}
-
-					if (config.Visuals.Enabled)
-					{
-						ImAdd::SeparatorText("General");
-
-						ImGui::BeginGroup();
-						{
-							ImAdd::CheckBox("Watermark", &config.Visuals.Watermark);
-							if (config.Visuals.Watermark)
-							{
-								ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::GetFontSize() * 2 - style.WindowPadding.x * 2);
-								ImAdd::ColorEdit4("##WatermarkColor", (float*)&config.Visuals.WatermarkColor);
-							}
-						}
-
-						ImAdd::CheckBox("Background", &config.Visuals.Background);
-
-						ImAdd::SeparatorText("Visual");
-						ImAdd::CheckBox("VSync", &config.Visuals.VSync);
-						ImAdd::CheckBox("Team Check", &config.Visuals.TeamCheck);
-						ImAdd::CheckBox("Visible Check", &config.Visuals.VisibleCheck);
-
-						ImGui::BeginGroup();
-						{
-							ImAdd::CheckBox("Hitmarker", &config.Visuals.Hitmarker);
-							if (config.Visuals.Hitmarker)
-							{
-								ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::GetFontSize() * 2 - style.WindowPadding.x * 2);
-								ImAdd::ColorEdit4("##HitmarkerColor", (float*)&config.Visuals.HitmarkerColor);
-							}
-						}
-
-						ImAdd::SeparatorText("Players");
-
-						ImGui::BeginGroup();
-						{
-							ImAdd::CheckBox("Name", &config.Visuals.Name);
-							if (config.Visuals.Name)
-							{
-								ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::GetFontSize() * 2 - style.WindowPadding.x * 2);
-								ImAdd::ColorEdit4("##NameColor", (float*)&config.Visuals.NameColor);
-							}
-						}
-
-						ImAdd::CheckBox("Health", &config.Visuals.Health);
-
-						ImGui::BeginGroup();
-						{
-							ImAdd::CheckBox("Box", &config.Visuals.Box);
-							if (config.Visuals.Box)
-							{
-								ImAdd::ColorEdit4("Box Color", (float*)&config.Visuals.BoxColor);
-								ImAdd::ColorEdit4("Box Color Visible", (float*)&config.Visuals.BoxColorVisible);
-							}
-						}
-
-						ImGui::BeginGroup();
-						{
-							ImAdd::CheckBox("Weapon", &config.Visuals.Weapon);
-							if (config.Visuals.Weapon)
-							{
-								ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::GetFontSize() * 2 - style.WindowPadding.x * 2);
-								ImAdd::ColorEdit4("##WeaponColor", (float*)&config.Visuals.WeaponColor);
-							}
-						}
-
-						ImGui::BeginGroup();
-						{
-							ImAdd::CheckBox("Bones", &config.Visuals.Bones);
-							if (config.Visuals.Bones)
-							{
-								ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::GetFontSize() * 2 - style.WindowPadding.x * 2);
-								ImAdd::ColorEdit4("##BonesColor", (float*)&config.Visuals.BonesColor);
-							}
-						}
-					}
-				}
-				ImGui::EndChild();
-			}
-
-			else if (m_iSelectedPage == MenuPage_Config)
-			{
-				ImGui::BeginChild("Configs", ImVec2(0, 0), ImGuiChildFlags_Border, ImGuiWindowFlags_MenuBar);
-				{
-					if (ImGui::BeginMenuBar()) {
-						ImGui::Text("Configs");
-						ImGui::EndMenuBar();
-					}
-
-					static char configName[128] = "";
-					static std::vector<std::string> configFiles;
-					static int lastSelectedTab = -1;
-					static bool menuWasOpen = false;
-					// Refresh config list when menu is opened or tab is switched to Config
-					if (shouldRenderMenu && !menuWasOpen) {
-						menuWasOpen = true;
-						configFiles = config.ListConfigs("configs/");
-					}
-					if (!shouldRenderMenu) {
-						menuWasOpen = false;
-					}
-					if (m_iSelectedPage == MenuPage_Config && lastSelectedTab != MenuPage_Config) {
-						configFiles = config.ListConfigs("configs/");
-					}
-					lastSelectedTab = m_iSelectedPage;
-
-					if (ImAdd::Button("Refresh"))
-					{
-						configFiles = config.ListConfigs("configs/");
-						LOG_INFO("Refreshed config list");
-					}
-
-					ImGui::Separator();
-
-					// Config List
-					if (ImGui::BeginListBox("Config list"))
-					{
-						if (configFiles.empty())
-						{
-							ImGui::Selectable("No configs found", false, ImGuiSelectableFlags_Disabled);
-						}
-						else
-						{
-							for (const auto& file : configFiles)
-							{
-								bool isSelected = (file == configName);
-								if (ImGui::Selectable(file.c_str(), isSelected))
-								{
-									strcpy(configName, file.c_str());
-									LOG_INFO("Selected config: {}", configName);
-								}
-
-								if (isSelected)
-								{
-									ImGui::SetItemDefaultFocus();
-								}
-							}
-						}
-						ImGui::EndListBox();
-					}
-
-					// Config Name Input
-					ImGui::InputText("Config Name", configName, IM_ARRAYSIZE(configName));
-
-					// Control Buttons
-					float buttonWidth = 75.0f;
-					float buttonSpacing = 10.0f;
-					ImGui::Dummy(ImVec2(0.0f, 5.0f));
-
-					if (ImAdd::Button("Load", ImVec2(buttonWidth, 0)))
-					{
-						std::string filePath = "configs/" + std::string(configName);
-						if (!config.LoadFromFile(filePath))
-						{
-							LOG_ERROR("Failed to load config: {}", filePath);
-						}
-						else
-						{
-							LOG_INFO("Loaded config: {}", filePath);
-						}
-					}
-
-					ImGui::SameLine(0.0f, buttonSpacing);
-
-					if (ImAdd::Button("Save", ImVec2(buttonWidth, 0)))
-					{
-						std::string filePath = "configs/" + std::string(configName);
-						if (!config.SaveToFile(filePath))
-						{
-							LOG_ERROR("Failed to save config: {}", filePath);
-						}
-						else
-						{
-							LOG_INFO("Saved config: {}", filePath);
-						}
-					}
-
-					ImGui::SameLine(0.0f, buttonSpacing);
-
-					if (ImAdd::Button("Delete", ImVec2(buttonWidth, 0)))
-					{
-						std::string filePath = "configs/" + std::string(configName);
-						if (!config.DeleteConfigFile(filePath))
-						{
-							LOG_ERROR("Failed to delete config: {}", filePath);
-						}
-						else
-						{
-							LOG_INFO("Deleted config: {}", filePath);
-							configFiles = config.ListConfigs("configs/");
-						}
-					}
-
-					ImGui::SameLine(0.0f, buttonSpacing);
-
-					if (ImAdd::Button("Import", ImVec2(buttonWidth, 0)))
-					{
-						if (config.LoadFromClipboard())
-						{
-							LOG_INFO("Config imported from clipboard");
-						}
-						else
-						{
-							LOG_ERROR("Failed to import config from clipboard");
-						}
-					}
-				}
-				ImGui::EndChild();
-			}
-			else if (m_iSelectedPage == MenuPage_Entities)
-			{
-				ImGui::BeginChild("Entities", ImVec2(0, 0), ImGuiChildFlags_Border, ImGuiWindowFlags_MenuBar);
-				{
-					if (ImGui::BeginMenuBar()) {
-						ImGui::Text("Entities");
-						ImGui::EndMenuBar();
-					}
-
-					for (const auto& entity : EntityManager::entities)
-					{
-						ImGui::Text("Name: %s", entity.name);
-						ImGui::Text("Health: %d", entity.health);
-						ImGui::Text("Team: %d", entity.team);
-						ImGui::Text("Score: %d", entity.score);
-						ImGui::Text("Kills: %d", entity.kills);
-						ImGui::Text("Deaths: %d", entity.deaths);
-						ImGui::Text("Position: (%.2f, %.2f, %.2f)", entity.headPosition.x, entity.headPosition.y, entity.headPosition.z);
-						ImGui::Separator();
-					}
-				}
-				ImGui::EndChild();
-			}
-			else if (m_iSelectedPage == MenuPage_Info)
-			{
-				ImGui::BeginChild("Info", ImVec2(0, 0), ImGuiChildFlags_Border, ImGuiWindowFlags_MenuBar);
-				{
-					if (ImGui::BeginMenuBar()) {
-						ImGui::Text("Info");
-						ImGui::EndMenuBar();
-					}
-
-					ImAdd::SeparatorText("Hardware");
-
-					ImGui::Text("DMA:");
-					ImGui::SameLine();
-					ImGui::TextColored(ProcInfo::DmaInitialized ? ImVec4(0, 1, 0, 1)/* green */ : ImVec4(1, 0, 0, 1)/* red */, "%s", ProcInfo::DmaInitialized ? "Connected" : "Disconnected");
-
-					ImGui::Text("KMBOX:");
-					ImGui::SameLine();
-					ImGui::TextColored(ProcInfo::KmboxInitialized ? ImVec4(0, 1, 0, 1)/* green */ : ImVec4(1, 0, 0, 1)/* red */, "%s", ProcInfo::KmboxInitialized ? "Connected" : "Disconnected");
-
-					ImAdd::SeparatorText("Game");
-
-					ImGui::Text("Client:");
-					ImGui::SameLine();
-					ImGui::Text("0x%llx", Globals::ClientBase);
-
-					ImAdd::SeparatorText("Cheat");
-
-					ImGui::Text("Overlay FPS: %.2f", OverlayFps);
-
-					float buttonWidth = 100.0f;
-					float buttonSpacing = 20.0f;
-					ImGui::SetCursorPosX((ImGui::GetWindowSize().x - 2 * buttonWidth - buttonSpacing) / 2);
-
-					if (ImAdd::Button("Open folder", ImVec2(buttonWidth, 0)))
-					{
-						ShellExecuteA(nullptr, "open", "explorer.exe", ".\\", nullptr, SW_SHOW);
-					}
-
-					ImGui::SameLine();
-
-					if (ImAdd::Button("Unload", ImVec2(buttonWidth, 0)))
-					{
-						Globals::Running = false;
-						shouldRun = false;
-						try {
-							Destroy(); // Ensure resources are cleaned up immediately
-						}
-						catch (...) {
-							LOG_ERROR("Error during cleanup");
-						}
-					}
-				}
-				ImGui::EndChild();
-			}
-		}
-		ImGui::EndChild();
-		ImGui::SetCursorPosY(ImGui::GetWindowHeight() - ImGui::GetFrameHeight());
-		ImGui::BeginChild("Footer", ImVec2(0, 0), 0, ImGuiWindowFlags_NoBackground);
-		{
-			ImGui::GetWindowDrawList()->AddRectFilled(ImGui::GetWindowPos(), ImGui::GetWindowPos() + ImGui::GetWindowSize(), ImGui::GetColorU32(ImGuiCol_ChildBg), style.WindowRounding, ImDrawFlags_RoundCornersBottom);
-			ImGui::GetWindowDrawList()->AddLine(ImGui::GetWindowPos() + ImVec2(style.WindowBorderSize, 0), ImGui::GetWindowPos() + ImVec2(ImGui::GetWindowWidth() - style.WindowBorderSize, 0), ImGui::GetColorU32(ImGuiCol_Border), style.WindowBorderSize);
-			ImGui::GetWindowDrawList()->AddText(ImGui::GetWindowPos() + style.FramePadding, ImGui::GetColorU32(ImGuiCol_Text), "Build: Developer");
-			ImGui::GetWindowDrawList()->AddText(ImGui::GetWindowPos() + ImVec2(ImGui::GetWindowWidth() - ImGui::CalcTextSize("Expires: Never").x - style.FramePadding.x, style.FramePadding.y), ImGui::GetColorU32(ImGuiCol_TextDisabled), "Expires: Never");
-		}
-		ImGui::EndChild();
-	}
-
-	ImGui::EndChild();
-	ImGui::End();
+    DestroyImGui();
+    DestroyDevice();
+    DestroyOverlay();
 }
