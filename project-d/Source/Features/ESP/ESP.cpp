@@ -43,6 +43,7 @@ void ESP::Render(ImDrawList* drawList)
     if (!scatterData)
         return;
 
+    // Declare all entity data arrays
     bool entityDead[MAX_PLAYERS] = {};
     int entityHealth[MAX_PLAYERS] = {};
     int entityTeam[MAX_PLAYERS] = {};
@@ -52,8 +53,10 @@ void ESP::Render(ImDrawList* drawList)
     Vector3 entityHeadPos[MAX_PLAYERS] = {};
     Vector3 entityFootPos[MAX_PLAYERS] = {};
     char entityNames[MAX_PLAYERS][260] = {};
+    uint32_t weaponPtrs[MAX_PLAYERS] = {};
     int entityWeaponId[MAX_PLAYERS] = {};
 
+    // Add requests for all entity data except weaponId
     for (int i = 1; i < playerCount && i < MAX_PLAYERS; i++)
     {
         if (!entityAddrs[i])
@@ -67,11 +70,24 @@ void ESP::Render(ImDrawList* drawList)
         mem.AddScatterReadRequest(scatterData, entityAddrs[i] + p_entity->v3_head_pos, &entityHeadPos[i], sizeof(entityHeadPos[i]));
         mem.AddScatterReadRequest(scatterData, entityAddrs[i] + p_entity->v3_foot_pos, &entityFootPos[i], sizeof(entityFootPos[i]));
         mem.AddScatterReadRequest(scatterData, entityAddrs[i] + p_entity->str_name, entityNames[i], sizeof(entityNames[i]));
-        // Mythos-style: weapon id via pointer chain
-        mem.AddScatterReadRequest(scatterData, entityAddrs[i] + p_entity->weapon_class + p_weapon->i_id, &entityWeaponId[i], sizeof(entityWeaponId[i]));
+        mem.AddScatterReadRequest(scatterData, entityAddrs[i] + p_entity->weapon_class, &weaponPtrs[i], sizeof(weaponPtrs[i]));
     }
     mem.ExecuteReadScatter(scatterData);
     mem.CloseScatterHandle(scatterData);
+
+    // Now, create a new scatter for weapon IDs
+    auto scatterWeaponId = mem.CreateScatterHandle();
+    if (!scatterWeaponId)
+        return;
+
+    for (int i = 1; i < playerCount && i < MAX_PLAYERS; i++)
+    {
+        if (!entityAddrs[i] || !weaponPtrs[i])
+            continue;
+        mem.AddScatterReadRequest(scatterWeaponId, weaponPtrs[i] + p_weapon->i_id, &entityWeaponId[i], sizeof(entityWeaponId[i]));
+    }
+    mem.ExecuteReadScatter(scatterWeaponId);
+    mem.CloseScatterHandle(scatterWeaponId);
 
     EntityManager::entities.clear();
     for (int i = 1; i < playerCount && i < MAX_PLAYERS; i++)
