@@ -72,6 +72,9 @@ int main()
 		return 1;
 	}
 
+    // Start entity update thread for ESP
+    EntityManager::StartEntityUpdateThread();
+
     if (!overlay.Create())
     {
 		LOG_ERROR("Failed to create Overlay");

@@ -234,6 +234,8 @@ bool Overlay::CreateOverlay()
 	ShowWindow(overlay, SW_SHOW);
 	UpdateWindow(overlay);
 
+	SetWindowPos(overlay, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+
 	return true;
 }
 
@@ -332,24 +334,27 @@ void Overlay::StartRender()
 
 void Overlay::EndRender()
 {
-	ImGui::Render();
+    ImGui::Render();
 
-	float color[4];
-	if (config.Visuals.Background) // Black bg
-	{
-		color[0] = 0; color[1] = 0; color[2] = 0; color[3] = 1;
-	}
-	else // Transparent bg
-	{
-		color[0] = 0; color[1] = 0; color[2] = 0; color[3] = 0;
-	}
+    float color[4];
+    if (config.Visuals.Background) // Black bg
+    {
+        color[0] = 0; color[1] = 0; color[2] = 0; color[3] = 1;
+    }
+    else // Transparent bg
+    {
+        color[0] = 0; color[1] = 0; color[2] = 0; color[3] = 0;
+    }
 
-	device_context->OMSetRenderTargets(1, &render_targetview, nullptr);
-	device_context->ClearRenderTargetView(render_targetview, color);
+    device_context->OMSetRenderTargets(1, &render_targetview, nullptr);
+    device_context->ClearRenderTargetView(render_targetview, color);
 
-	ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+    ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 
-	swap_chain->Present(config.Visuals.VSync ? 1U : 0U, 0U);
+    swap_chain->Present(config.Visuals.VSync ? 1U : 0U, 0U);
+
+    // Ensure overlay stays topmost every frame to prevent flicker
+    SetWindowPos(overlay, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
 }
 
 void Overlay::StyleMenu(ImGuiIO& IO, ImGuiStyle& style)
@@ -525,7 +530,8 @@ void Overlay::RenderMenu()
                 );
             }
             float startX = itemPos.x + tabPadding;
-            float iconY = itemPos.y + (tabHeight - (iconFont ? iconFont->FontSize : 21.5f)) / 2;
+            // Adjust iconY to align icon with text more closely
+            float iconY = itemPos.y + (tabHeight - (iconFont ? iconFont->FontSize : 21.5f)) / 2 + 2.0f; // +2.0f for better vertical alignment
             float textY = itemPos.y + (tabHeight - (tabFont ? tabFont->FontSize : 16.5f)) / 2;
             float textX = startX + (iconFont ? iconFont->FontSize : 21.5f) + iconTextSpacing;
             ImGui::SetCursorScreenPos(ImVec2(startX, iconY));
@@ -701,31 +707,32 @@ void Overlay::RenderMenu()
                 ImGui::Separator();
 
                 // Config List
-                if (ImGui::BeginListBox("Config list"))
-                {
-                    if (configFiles.empty())
-                    {
-                        ImGui::Selectable("No configs found", false, ImGuiSelectableFlags_Disabled);
-                    }
-                    else
-                    {
-                        for (const auto& file : configFiles)
-                        {
-                            bool isSelected = (file == configName);
-                            if (ImGui::Selectable(file.c_str(), isSelected))
-                            {
-                                strcpy(configName, file.c_str());
-                                LOG_INFO("Selected config: {}", configName);
-                            }
-
-                            if (isSelected)
-                            {
-                                ImGui::SetItemDefaultFocus();
-                            }
-                        }
-                    }
-                    ImGui::EndListBox();
-                }
+                ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.13f, 0.13f, 0.13f, 1.0f)); // lighter bg
+ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.22f, 0.22f, 0.22f, 0.5f)); // less contrast
+if (ImGui::BeginListBox("Config list"))
+{
+    if (configFiles.empty())
+    {
+        ImGui::Selectable("No configs found", false, ImGuiSelectableFlags_Disabled);
+    }
+    else
+    {
+        for (const auto& file : configFiles)
+        {
+            bool isSelected = (file == configName);
+            if (ImGui::Selectable(file.c_str(), isSelected))
+            {
+                strcpy(configName, file.c_str());
+            }
+            if (isSelected)
+            {
+                ImGui::SetItemDefaultFocus();
+            }
+        }
+    }
+    ImGui::EndListBox();
+}
+ImGui::PopStyleColor(2);
 
                 // Config Name Input
                 ImGui::InputText("Config Name", configName, IM_ARRAYSIZE(configName));
@@ -890,16 +897,3 @@ void Overlay::Destroy()
     DestroyDevice();
     DestroyOverlay();
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

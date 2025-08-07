@@ -1,9 +1,8 @@
 #pragma once
 #include <vector>
-#include <string>
-#include <SDK.hpp>
+#include <mutex>
 #include "Aimbot/Aimbot.hpp"
-
+#include <SDK.hpp>
 
 struct EntityData {
     std::string name;
@@ -19,7 +18,9 @@ struct EntityData {
 };
 
 namespace EntityManager {
-    inline std::vector<EntityData> entities;
+    extern std::vector<EntityData> entities;
+    extern std::mutex entities_mutex;
+    void StartEntityUpdateThread();
 }
 
 class Features
@@ -28,12 +29,11 @@ public:
 
 	void InitAimbot()
 	{
-		thread([&]()
+		std::thread([&]()
 		{
 			while (Globals::Running)
 			{
-				this_thread::sleep_for(chrono::milliseconds(1));
-
+				std::this_thread::sleep_for(std::chrono::milliseconds(1));
 				aim.Update();
 			}
 		}).detach();
@@ -48,7 +48,6 @@ public:
 	bool Init()
 	{
 		//InitAimbot();
-
 		return true;
 	}
 };
