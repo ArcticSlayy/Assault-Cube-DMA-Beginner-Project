@@ -374,39 +374,40 @@ void Overlay::StyleMenu(ImGuiIO& IO, ImGuiStyle& style)
     style.WindowTitleAlign  = ImVec2(0.0f, 0.5f);
     style.ButtonTextAlign   = ImVec2(0.5f, 0.5f);
     // Colors
-    ImVec4 darkBg = ImVec4(0.07f, 0.08f, 0.10f, 1.00f);
+    ImVec4 darkBg = ImVec4(0.102f, 0.102f, 0.102f, 1.00f); // #1A1A1A
+    ImVec4 buttonBg = ImVec4(0.16f, 0.16f, 0.16f, 1.00f); // Slightly lighter for contrast
     ImVec4 blueAccent = ImVec4(0.22f, 0.40f, 0.80f, 1.00f);
-    style.Colors[ImGuiCol_WindowBg]             = darkBg;
-    style.Colors[ImGuiCol_ChildBg]              = ImVec4(0.10f, 0.11f, 0.13f, 1.00f);
-    style.Colors[ImGuiCol_FrameBg]              = ImVec4(0.13f, 0.14f, 0.16f, 1.00f);
-    style.Colors[ImGuiCol_FrameBgHovered]       = blueAccent;
-    style.Colors[ImGuiCol_FrameBgActive]        = blueAccent;
-    style.Colors[ImGuiCol_TitleBg]              = darkBg;
-    style.Colors[ImGuiCol_TitleBgActive]        = darkBg;
-    style.Colors[ImGuiCol_TitleBgCollapsed]     = darkBg;
-    style.Colors[ImGuiCol_Border]               = ImVec4(0.18f, 0.19f, 0.22f, 0.60f);
-    style.Colors[ImGuiCol_Button]               = ImVec4(0.13f, 0.14f, 0.16f, 1.00f);
-    style.Colors[ImGuiCol_ButtonHovered]        = blueAccent;
-    style.Colors[ImGuiCol_ButtonActive]         = blueAccent;
-    style.Colors[ImGuiCol_Header]               = ImVec4(0.13f, 0.14f, 0.16f, 1.00f);
-    style.Colors[ImGuiCol_HeaderHovered]        = blueAccent;
-    style.Colors[ImGuiCol_HeaderActive]         = blueAccent;
-    style.Colors[ImGuiCol_SliderGrab]           = blueAccent;
-    style.Colors[ImGuiCol_SliderGrabActive]     = ImVec4(0.32f, 0.50f, 0.90f, 1.00f);
-    style.Colors[ImGuiCol_CheckMark]            = blueAccent;
-    style.Colors[ImGuiCol_Text]                 = ImVec4(0.95f, 0.96f, 0.98f, 1.00f);
-    style.Colors[ImGuiCol_TextDisabled]         = ImVec4(0.60f, 0.62f, 0.65f, 1.00f);
-    style.Colors[ImGuiCol_Separator]            = ImVec4(0.18f, 0.19f, 0.22f, 0.60f);
-    style.Colors[ImGuiCol_PopupBg]              = ImVec4(0.10f, 0.11f, 0.13f, 1.00f);
-    style.Colors[ImGuiCol_Tab]                  = ImVec4(0.13f, 0.14f, 0.16f, 1.00f);
-    style.Colors[ImGuiCol_TabHovered]           = blueAccent;
-    style.Colors[ImGuiCol_TabActive]            = blueAccent;
-    style.Colors[ImGuiCol_TabUnfocused]         = ImVec4(0.13f, 0.14f, 0.16f, 1.00f);
-    style.Colors[ImGuiCol_TabUnfocusedActive]   = blueAccent;
-    style.Colors[ImGuiCol_DragDropTarget]       = blueAccent;
-    style.Colors[ImGuiCol_NavHighlight]         = blueAccent;
-    style.Colors[ImGuiCol_ScrollbarBg]          = darkBg;
-    style.Colors[ImGuiCol_ScrollbarGrab]        = ImVec4(0.13f, 0.14f, 0.16f, 1.00f);
+    style.Colors[ImGuiCol_WindowBg]           = darkBg;
+    style.Colors[ImGuiCol_ChildBg]            = darkBg;
+    style.Colors[ImGuiCol_FrameBg]            = darkBg;
+    style.Colors[ImGuiCol_Button]             = buttonBg;
+    style.Colors[ImGuiCol_Header]             = darkBg;
+    style.Colors[ImGuiCol_Tab]                = darkBg;
+    style.Colors[ImGuiCol_TabUnfocused]       = darkBg;
+    style.Colors[ImGuiCol_PopupBg]            = darkBg;
+    style.Colors[ImGuiCol_ScrollbarBg]        = darkBg;
+    style.Colors[ImGuiCol_ScrollbarGrab]      = darkBg;
+    style.Colors[ImGuiCol_FrameBgHovered]     = blueAccent;
+    style.Colors[ImGuiCol_FrameBgActive]      = blueAccent;
+    style.Colors[ImGuiCol_TitleBg]            = darkBg;
+    style.Colors[ImGuiCol_TitleBgActive]      = darkBg;
+    style.Colors[ImGuiCol_TitleBgCollapsed]   = darkBg;
+    style.Colors[ImGuiCol_Border]             = ImVec4(0.18f, 0.19f, 0.22f, 0.60f);
+    style.Colors[ImGuiCol_ButtonHovered]      = blueAccent;
+    style.Colors[ImGuiCol_ButtonActive]       = blueAccent;
+    style.Colors[ImGuiCol_HeaderHovered]      = blueAccent;
+    style.Colors[ImGuiCol_HeaderActive]       = blueAccent;
+    style.Colors[ImGuiCol_SliderGrab]         = blueAccent;
+    style.Colors[ImGuiCol_SliderGrabActive]   = ImVec4(0.32f, 0.50f, 0.90f, 1.00f);
+    style.Colors[ImGuiCol_CheckMark]          = blueAccent;
+    style.Colors[ImGuiCol_Text]               = ImVec4(0.95f, 0.96f, 0.98f, 1.00f);
+    style.Colors[ImGuiCol_TextDisabled]       = ImVec4(0.60f, 0.62f, 0.65f, 1.00f);
+    style.Colors[ImGuiCol_Separator]          = ImVec4(0.18f, 0.19f, 0.22f, 0.60f);
+    style.Colors[ImGuiCol_TabHovered]         = blueAccent;
+    style.Colors[ImGuiCol_TabActive]          = blueAccent;
+    style.Colors[ImGuiCol_TabUnfocusedActive] = blueAccent;
+    style.Colors[ImGuiCol_DragDropTarget]     = blueAccent;
+    style.Colors[ImGuiCol_NavHighlight]       = blueAccent;
     style.Colors[ImGuiCol_ScrollbarGrabHovered] = blueAccent;
     style.Colors[ImGuiCol_ScrollbarGrabActive]  = blueAccent;
 }
@@ -441,35 +442,40 @@ void Overlay::RenderMenu()
     StyleMenu(io, style);
     float OverlayFps = ImGui::GetIO().Framerate;
 
-    ImGui::SetNextWindowSize(ImVec2(900, 600), ImGuiCond_Always);
-    ImGui::Begin("Aetherial", &shouldRenderMenu, ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDecoration);
+    ImGui::SetNextWindowSize(ImVec2(1100, 750), ImGuiCond_Always);
+    ImGui::Begin("Aetherial", &shouldRenderMenu, ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
     // --- Gradient Title Bar ---
     ImVec2 winPos = ImGui::GetWindowPos();
     ImVec2 winSize = ImGui::GetWindowSize();
-    float titleBarHeight = 64.0f; // Make title bar tall enough for large font
+    float textSize = titleFont ? titleFont->FontSize : 35.0f;
+    float iconSize = iconFont ? iconFont->FontSize : 28.0f;
+    float paddingY = 5.0f; // 5px above and below text
+    float titleBarHeight = ImMax(textSize, iconSize) + 2 * paddingY;
     float rounding = 16.0f;
     ImU32 titleLeft = ImGui::ColorConvertFloat4ToU32(ImVec4(0.13f, 0.15f, 0.18f, 1.0f));
     ImU32 titleRight = ImGui::ColorConvertFloat4ToU32(ImVec4(0.09f, 0.10f, 0.12f, 1.0f));
-    // Draw rounded rectangle only on top corners, spanning full window width
-    ImGui::GetWindowDrawList()->AddRectFilled(winPos, winPos + ImVec2(winSize.x, titleBarHeight), titleLeft, rounding, ImDrawFlags_RoundCornersTop);
+    // Fill full width, no rounding
     ImGui::GetWindowDrawList()->AddRectFilledMultiColor(winPos, winPos + ImVec2(winSize.x, titleBarHeight), titleLeft, titleRight, titleRight, titleLeft);
+    // Overlay rounded corners only at top
+    ImGui::GetWindowDrawList()->AddRect(winPos, winPos + ImVec2(winSize.x, titleBarHeight), titleLeft, rounding, ImDrawFlags_RoundCornersTop, 2.0f);
+    // Subtle shadow under title bar
+    ImGui::GetWindowDrawList()->AddRectFilled(winPos + ImVec2(0, titleBarHeight - 2), winPos + ImVec2(winSize.x, titleBarHeight + 8), ImGui::ColorConvertFloat4ToU32(ImVec4(0,0,0,0.18f)));
     // Center icon and text horizontally and vertically
-    float iconSize = iconFont ? iconFont->FontSize : 28.0f;
-    float textSize = titleFont ? titleFont->FontSize : 35.0f;
     const char* titleText = "Aetherial";
     ImVec2 textDim = ImGui::CalcTextSize(titleText);
     float totalWidth = iconSize + 18.0f + textDim.x;
     float centerX = (winSize.x - totalWidth) * 0.5f;
-    float centerY = (titleBarHeight - ImMax(iconSize, textSize)) * 0.5f;
-    float iconY = centerY + (textSize - iconSize) / 2.0f;
-    float textY = centerY + (iconSize - textSize) / 2.0f;
-    ImGui::SetCursorPos(ImVec2(centerX, iconY));
+    float centerY = paddingY + (titleBarHeight - 2 * paddingY - ImMax(iconSize, textSize)) / 2.0f;
+    float iconY = centerY + (ImMax(iconSize, textSize) - iconSize) / 2.0f;
+    float textY = centerY + (ImMax(iconSize, textSize) - textSize) / 2.0f;
+    float startX = centerX;
+    ImGui::SetCursorPos(ImVec2(startX, iconY));
     ImGui::PushFont(iconFont);
     ImGui::Text(ICON_FA_BOOK);
     ImGui::PopFont();
     ImGui::SameLine(0, 18.0f);
-    ImGui::SetCursorPosY(textY + centerY);
+    ImGui::SetCursorPos(ImVec2(startX + iconSize + 18.0f, textY));
     ImGui::PushFont(titleFont);
     ImGui::TextColored(ImVec4(0.95f, 0.96f, 0.98f, 1.0f), "%s", titleText);
     ImGui::PopFont();
@@ -482,33 +488,47 @@ void Overlay::RenderMenu()
         ICON_FA_COG,        // Config
         ICON_FA_INFO_CIRCLE // Info
     };
-    ImGui::BeginChild("Sidebar", ImVec2(200, 0), true);
+    float footerHeight = 32.0f;
+    float sidebarWidth = 220.0f; // Make sidebar wider for icons/text
+    float sidebarHeight = winSize.y - titleBarHeight - footerHeight;
+    ImGui::BeginChild("Sidebar", ImVec2(sidebarWidth, sidebarHeight), false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     {
+        ImGui::SetScrollY(0); // Force scroll position to top
         ImGui::PushFont(iconFont);
-        float tabHeight = 54.0f;
+        float tabSpacing = 4.0f;
+        float tabHeight = ImMin((sidebarHeight - ((m_Tabs.size() - 1) * tabSpacing)) / m_Tabs.size(), 40.0f);
         float iconTextSpacing = 16.0f;
         float tabPadding = 22.0f;
+        float tabWidth = sidebarWidth; // Tabs fill sidebar
         for (int i = 0; i < m_Tabs.size(); i++) {
             ImGui::PushID(i);
             bool selected = (m_iSelectedPage == i);
-            ImVec2 itemSize(180, tabHeight);
+            ImVec2 itemSize(tabWidth, tabHeight);
             ImVec2 itemPos = ImGui::GetCursorScreenPos();
-            ImRect itemRect(itemPos, itemPos + itemSize);
             if (selected) {
-                ImU32 colLeft = ImGui::ColorConvertFloat4ToU32(ImVec4(0.22f, 0.40f, 0.80f, 0.45f));
-                ImU32 colRight = ImGui::ColorConvertFloat4ToU32(ImVec4(0.22f, 0.40f, 0.80f, 0.18f));
+                // Gradient only for active tab, fit child width
+                ImU32 tabLeft = ImGui::ColorConvertFloat4ToU32(ImVec4(0.22f, 0.40f, 0.80f, 0.45f));
+                ImU32 tabRight = ImGui::ColorConvertFloat4ToU32(ImVec4(0.22f, 0.40f, 0.80f, 0.18f));
                 ImGui::GetWindowDrawList()->AddRectFilledMultiColor(
-                    itemRect.Min, itemRect.Max,
-                    colLeft, colRight, colRight, colLeft
+                    itemPos,
+                    itemPos + ImVec2(tabWidth, tabHeight),
+                    tabLeft, tabRight, tabRight, tabLeft
+                );
+                ImGui::GetWindowDrawList()->AddRectFilled(
+                    itemPos, itemPos + ImVec2(tabWidth, tabHeight),
+                    ImGui::ColorConvertFloat4ToU32(ImVec4(0.22f, 0.40f, 0.80f, 0.25f)), 8.0f
+                );
+                // Blue accent border for active tab
+                ImGui::GetWindowDrawList()->AddRect(
+                    itemPos, itemPos + ImVec2(tabWidth, tabHeight),
+                    ImGui::ColorConvertFloat4ToU32(ImVec4(0.22f, 0.40f, 0.80f, 0.85f)), 8.0f, 0, 2.0f
                 );
             }
             float startX = itemPos.x + tabPadding;
-            // Center icon and text using their own font sizes
             float iconY = itemPos.y + (tabHeight - (iconFont ? iconFont->FontSize : 21.5f)) / 2;
             float textY = itemPos.y + (tabHeight - (tabFont ? tabFont->FontSize : 16.5f)) / 2;
-            float iconX = startX;
-            float textX = iconX + (tabFont ? tabFont->FontSize : 16.5f) + iconTextSpacing;
-            ImGui::SetCursorScreenPos(ImVec2(iconX, iconY));
+            float textX = startX + (iconFont ? iconFont->FontSize : 21.5f) + iconTextSpacing;
+            ImGui::SetCursorScreenPos(ImVec2(startX, iconY));
             ImGui::TextColored(selected ? ImVec4(0.22f, 0.40f, 0.80f, 1.0f) : ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "%s", tabIcons[i]);
             ImGui::SetCursorScreenPos(ImVec2(textX, textY));
             ImGui::PushFont(tabFont);
@@ -519,7 +539,9 @@ void Overlay::RenderMenu()
                 m_iSelectedPage = i;
             }
             ImGui::PopID();
-            ImGui::Dummy(ImVec2(0, 6));
+            if (i < m_Tabs.size() - 1) {
+                ImGui::Dummy(ImVec2(0, tabSpacing));
+            }
         }
         ImGui::PopFont();
     }
@@ -527,21 +549,21 @@ void Overlay::RenderMenu()
     ImGui::SameLine();
 
     // --- Main Content ---
-    ImGui::BeginChild("MainContent", ImVec2(0, 0), true);
+    ImGui::BeginChild("MainContent", ImVec2(0, sidebarHeight), true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     {
         float fGroupWidth = (ImGui::GetWindowWidth() - style.WindowPadding.x * 2 - style.ItemSpacing.x * 8) / 2.0f + 60.0f;
         ImGui::PushFont(featureFont);
         if (m_iSelectedPage == 0) // Aim
         {
             ImGui::Columns(2, nullptr, false);
-
             float yStart = ImGui::GetCursorPosY();
-
             // Left: Aimbot
             ImGui::SetCursorPosY(yStart);
-            ImGui::Text("Aimbot");
-            ImGui::Separator();
-            ImGui::BeginChild("AimbotSection", ImVec2(0, 340), ImGuiChildFlags_Border);
+            ImGui::BeginChild("AimbotSection", ImVec2(0, 340), ImGuiChildFlags_Border, ImGuiWindowFlags_MenuBar);
+            if (ImGui::BeginMenuBar()) {
+                ImGui::TextColored(ImVec4(0.85f, 0.86f, 0.88f, 1.0f), "Aimbot");
+                ImGui::EndMenuBar();
+            }
             {
                 ToggleSwitch("Enable", &config.Aim.Aimbot);
                 if (config.Aim.Aimbot)
@@ -567,14 +589,14 @@ void Overlay::RenderMenu()
                 }
             }
             ImGui::EndChild();
-
             ImGui::NextColumn();
-
             // Right: Triggerbot
             ImGui::SetCursorPosY(yStart); // Use the same yStart as left column
-            ImGui::Text("Triggerbot");
-            ImGui::Separator();
-            ImGui::BeginChild("TriggerbotSection", ImVec2(0, 340), ImGuiChildFlags_Border);
+            ImGui::BeginChild("TriggerbotSection", ImVec2(0, 340), ImGuiChildFlags_Border, ImGuiWindowFlags_MenuBar);
+            if (ImGui::BeginMenuBar()) {
+                ImGui::TextColored(ImVec4(0.85f, 0.86f, 0.88f, 1.0f), "Triggerbot");
+                ImGui::EndMenuBar();
+            }
             {
                 ToggleSwitch("Enable", &config.Aim.Trigger);
                 if (config.Aim.Trigger)
@@ -592,14 +614,15 @@ void Overlay::RenderMenu()
                 }
             }
             ImGui::EndChild();
-
             ImGui::Columns(1);
         }
         else if (m_iSelectedPage == 1) // Visuals
         {
-            ImGui::Text("Visuals");
-            ImGui::Separator();
-            ImGui::BeginChild("Visuals", ImVec2(0, 0), ImGuiChildFlags_Border);
+            ImGui::BeginChild("Visuals", ImVec2(0, 0), ImGuiChildFlags_Border, ImGuiWindowFlags_MenuBar);
+            if (ImGui::BeginMenuBar()) {
+                ImGui::TextColored(ImVec4(0.85f, 0.86f, 0.88f, 1.0f), "Visuals");
+                ImGui::EndMenuBar();
+            }
             {
                 ToggleSwitch("Enable", &config.Visuals.Enabled);
                 if (config.Visuals.Enabled)
@@ -832,16 +855,6 @@ void Overlay::RenderMenu()
         }
         ImGui::PopFont(); // featureFont
     }
-    ImGui::EndChild();
-    ImGui::SetCursorPosY(ImGui::GetWindowHeight() - ImGui::GetFrameHeight());
-    ImGui::BeginChild("Footer", ImVec2(0, 0), 0, ImGuiWindowFlags_NoBackground);
-    {
-        ImGui::GetWindowDrawList()->AddRectFilled(ImGui::GetWindowPos(), ImGui::GetWindowPos() + ImGui::GetWindowSize(), ImGui::GetColorU32(ImGuiCol_ChildBg), style.WindowRounding, ImDrawFlags_RoundCornersBottom);
-        ImGui::GetWindowDrawList()->AddLine(ImGui::GetWindowPos() + ImVec2(style.WindowBorderSize, 0), ImGui::GetWindowPos() + ImVec2(ImGui::GetWindowWidth() - style.WindowBorderSize, 0), ImGui::GetColorU32(ImGuiCol_Border), style.WindowBorderSize);
-        ImGui::GetWindowDrawList()->AddText(ImGui::GetWindowPos() + style.FramePadding, ImGui::GetColorU32(ImGuiCol_Text), "Build: Developer");
-        ImGui::GetWindowDrawList()->AddText(ImGui::GetWindowPos() + ImVec2(ImGui::GetWindowWidth() - ImGui::CalcTextSize("Expires: Never").x - style.FramePadding.x, style.FramePadding.y), ImGui::GetColorU32(ImGuiCol_TextDisabled), "Expires: Never");
-    }
-    ImGui::EndChild();
     ImGui::End();
 }
 
@@ -877,5 +890,16 @@ void Overlay::Destroy()
     DestroyDevice();
     DestroyOverlay();
 }
+
+
+
+
+
+
+
+
+
+
+
 
 
