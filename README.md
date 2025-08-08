@@ -15,7 +15,7 @@ I've currently implemented a basic cheat that reads player positions and display
 
 ## Todo
 - [X] Fix the nullptr errors when hitting Unload in the Info tab.
-- [ ] Fix the ESP giving some weird hitch effect when rendering the visuals around players.
+- [X] Fix the ESP giving some weird hitch effect when rendering the visuals around players. (Looks to be completed, but needs more testing)
 - [X] Re-implement the Visuals to toggle ESP on and off, it's currently always on for debugging purposes.
 - [ ] Add more features to the cheat, like aimbot, triggerbot, etc.
 - [X] Make the Weapon ESP more accurate, currently it just says the weapon name is a Knife which is not true.

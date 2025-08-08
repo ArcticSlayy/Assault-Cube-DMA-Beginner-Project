@@ -55,6 +55,9 @@ static EntityData* FindBestTarget()
     return best;
 }
 
+static float lastDx = 0.0f;
+static float lastDy = 0.0f;
+
 void Aimbot::Update()
 {
     if (!config.Aim.Aimbot)
@@ -81,8 +84,19 @@ void Aimbot::Update()
     printf("[AIMBOT] Target: %s, HeadScreen: (%.2f, %.2f)\n", currentTarget->name.c_str(), screenPos.x, screenPos.y);
 
     // Use config.Aim.AimbotSmooth for speed/sensitivity
-    float scale = config.Aim.AimbotSmooth / 100.0f; // 0-100 slider, scale to 0.0-1.0
-    int dx = (int)((screenPos.x - (Screen.x / 2)) * scale);
-    int dy = (int)((screenPos.y - (Screen.y / 2)) * scale);
+    float smooth = config.Aim.AimbotSmooth;
+    float scale = smooth > 0.0f ? 1.0f / smooth : 1.0f; // Higher smooth = slower
+
+    float targetDx = (screenPos.x - (Screen.x / 2));
+    float targetDy = (screenPos.y - (Screen.y / 2));
+
+    // Interpolate (lerp) from last delta to target delta
+    lastDx = lastDx + (targetDx - lastDx) * scale;
+    lastDy = lastDy + (targetDy - lastDy) * scale;
+
+    int dx = static_cast<int>(lastDx);
+    int dy = static_cast<int>(lastDy);
+
+    // Only move if within FOV (already filtered in FindBestTarget)
     Kmbox.Mouse.MoveRelative(dx, dy);
 }
