@@ -174,6 +174,31 @@ int KmBoxMouse::Move(int x, int y)
 	return Kmbox.SendData(Length);
 }
 
+int KmBoxMouse::MoveRelative(int dx, int dy)
+{
+    if (Kmbox.s_Client <= 0)
+        return err_creat_socket;
+
+    int Status = 0;
+
+    Kmbox.PostData.head.indexpts++;
+    Kmbox.PostData.head.cmd = cmd_mouse_move;
+    Kmbox.PostData.head.rand = rand();
+
+    // Use deltas for movement
+    this->MouseData.x = dx;
+    this->MouseData.y = dy;
+
+    memcpy_s(&Kmbox.PostData.cmd_mouse, sizeof(soft_mouse_t), &this->MouseData, sizeof(soft_mouse_t));
+
+    int Length = sizeof(cmd_head_t) + sizeof(soft_mouse_t);
+
+    this->MouseData.x = 0;
+    this->MouseData.y = 0;
+
+    return Kmbox.SendData(Length);
+}
+
 int KmBoxMouse::Move_Auto(int x, int y, int Runtime)
 {
 	if (Kmbox.s_Client <= 0)

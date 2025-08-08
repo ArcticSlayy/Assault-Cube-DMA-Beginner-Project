@@ -60,17 +60,13 @@ public:
 
 	inline static bool shouldRun;
 
-	static void EnableDockingAndMultiViewport();
-	static void ShowThemeSwitcher();
-	static void ShowTooltip(const char* text);
-	static void SaveWindowState();
-	static void LoadWindowState();
 
 private:
 	inline static int m_iSelectedPage;
 	inline static std::vector<const char*> m_Tabs;
 
 	inline static float OverlayFps;
+
 
 };
 

@@ -11,6 +11,7 @@
 #include <spdlog/spdlog.h>
 
 namespace EntityManager {
+    std::vector<EntityData> entities;
     // Double buffer for entities
     std::vector<EntityData> entitiesA;
     std::vector<EntityData> entitiesB;
@@ -26,8 +27,8 @@ namespace EntityManager {
         static auto lastUpdate = std::chrono::steady_clock::now();
         while (Globals::Running) {
             auto now = std::chrono::steady_clock::now();
-            // Throttle to 60Hz
-            if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastUpdate).count() < 16) {
+            // Throttle to 240Hz
+            if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastUpdate).count() < 4) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
                 continue;
             }

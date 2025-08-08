@@ -11,6 +11,8 @@ public:
 public:
     // Move
     int Move(int x, int y);
+    // Relative move
+    int MoveRelative(int dx, int dy);
     // Auto move
     int Move_Auto(int x, int y, int Runtime);
     // Left button

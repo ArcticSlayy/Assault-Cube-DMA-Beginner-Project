@@ -349,6 +349,16 @@ void Overlay::EndRender()
     device_context->OMSetRenderTargets(1, &render_targetview, nullptr);
     device_context->ClearRenderTargetView(render_targetview, color);
 
+    // Always draw FOV circle if enabled (before rendering draw data)
+    if (config.Aim.DrawFov)
+    {
+        ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+        ImVec2 center(Screen.x / 2.0f, Screen.y / 2.0f);
+        float radius = config.Aim.AimbotFov;
+        ImVec4 color = config.Aim.AimbotFovColor;
+        drawList->AddCircle(center, radius, ImGui::GetColorU32(color), 0, 2.0f);
+    }
+
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 
     auto beforePresent = std::chrono::steady_clock::now();
@@ -460,6 +470,8 @@ bool ToggleSwitch(const char* label, bool* v, float scale = 0.55f)
 
 void Overlay::RenderMenu()
 {
+    static std::string configNotification;
+    static float notificationTimer = 0.0f;
     ImGuiStyle& style = ImGui::GetStyle();
     ImGuiIO& io = ImGui::GetIO();
     StyleMenu(io, style);
@@ -595,10 +607,6 @@ void Overlay::RenderMenu()
                     if (ProcInfo::KmboxInitialized)
                     {
                         ToggleSwitch("Draw FOV", &config.Aim.DrawFov);
-                        if (config.Aim.DrawFov)
-                        {
-                            ImAdd::ColorEdit4("Fov Color", (float*)&config.Aim.AimbotFovColor);
-                        }
                         ToggleSwitch("Aim Visible", &config.Aim.AimVisible);
                         ToggleSwitch("Aim Teammates", &config.Aim.AimFriendly);
                         ImAdd::KeyBindOptions KeyMode = (ImAdd::KeyBindOptions)config.Aim.AimbotKeyMode;
@@ -726,7 +734,7 @@ void Overlay::RenderMenu()
 
                 // Config List
                 ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.13f, 0.13f, 0.13f, 1.0f)); // lighter bg
-ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.22f, 0.22f, 0.22f, 0.5f)); // less contrast
+                ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.22f, 0.22f, 0.22f, 0.5f)); // less contrast
 if (ImGui::BeginListBox("Config list"))
 {
     if (configFiles.empty())
@@ -752,8 +760,10 @@ if (ImGui::BeginListBox("Config list"))
 }
 ImGui::PopStyleColor(2);
 
-                // Config Name Input
+                ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.13f, 0.13f, 0.13f, 1.0f)); // lighter bg
+                ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.22f, 0.22f, 0.22f, 0.5f)); // less contrast
                 ImGui::InputText("Config Name", configName, IM_ARRAYSIZE(configName));
+                ImGui::PopStyleColor(2);
 
                 // Control Buttons
                 float buttonWidth = 75.0f;
@@ -766,11 +776,14 @@ ImGui::PopStyleColor(2);
                     if (!config.LoadFromFile(filePath))
                     {
                         LOG_ERROR("Failed to load config: {}", filePath);
+                        configNotification = "Failed to load config!";
                     }
                     else
                     {
                         LOG_INFO("Loaded config: {}", filePath);
+                        configNotification = "Config loaded!";
                     }
+                    notificationTimer = 2.0f; // Show for 2 seconds
                 }
 
                 ImGui::SameLine(0.0f, buttonSpacing);
@@ -781,11 +794,14 @@ ImGui::PopStyleColor(2);
                     if (!config.SaveToFile(filePath))
                     {
                         LOG_ERROR("Failed to save config: {}", filePath);
+                        configNotification = "Failed to save config!";
                     }
                     else
                     {
                         LOG_INFO("Saved config: {}", filePath);
+                        configNotification = "Config saved!";
                     }
+                    notificationTimer = 2.0f; // Show for 2 seconds
                 }
 
                 ImGui::SameLine(0.0f, buttonSpacing);
@@ -878,6 +894,18 @@ ImGui::PopStyleColor(2);
             }
             ImGui::EndChild();
         }
+
+        // --- Config Notification ---
+        if (!configNotification.empty())
+        {
+            ImGui::SetCursorPosY(ImGui::GetWindowHeight() - 80); // Near the bottom
+            ImGui::BeginChild("ConfigNotification", ImVec2(0, 80), false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+            {
+                ImGui::TextColored(ImVec4(1, 1, 1, 1), "%s", configNotification.c_str());
+            }
+            ImGui::EndChild();
+        }
+
         ImGui::PopFont(); // featureFont
     }
     ImGui::End();

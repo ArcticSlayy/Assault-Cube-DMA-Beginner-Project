@@ -2,18 +2,18 @@
     "Aim": {
         "AimFriendly": false,
         "AimVisible": false,
-        "Aimbot": false,
-        "AimbotFov": 0.0,
+        "Aimbot": true,
+        "AimbotFov": 40.5,
         "AimbotFovColor": [
             1.0,
             1.0,
             1.0,
             1.0
         ],
-        "AimbotKey": 0,
+        "AimbotKey": 2,
         "AimbotKeyMode": 0,
-        "AimbotSmooth": 0.0,
-        "DrawFov": false,
+        "AimbotSmooth": 36.0,
+        "DrawFov": true,
         "Trigger": false,
         "TriggerDelay": 0,
         "TriggerKey": 0,
@@ -26,7 +26,7 @@
         "Uuid": "A8F45054"
     },
     "Visuals": {
-        "Background": false,
+        "Background": true,
         "Bones": false,
         "BonesColor": [
             1.0,
@@ -37,7 +37,7 @@
         "Box": true,
         "BoxColor": [
             1.0,
-            0.0,
+            0.3251231908798218,
             0.0,
             1.0
         ],
