@@ -11,13 +11,13 @@
 ## Introduction
 This is a simple base to start building your Direct Memory Access (DMA) cheats.
 
-I've currently implemented a basic cheat that reads player positions and displays them on the screen with boxes and names for now for Assault Cube. This is a beginner project so it's not optimized well, and has ESP stuttering. 
+I've currently implemented a basic cheat that reads player positions and displays them on the screen with boxes and names for now for Assault Cube. This is a beginner project so it's not optimized well.
 
 ## Todo
 - [X] Fix the nullptr errors when hitting Unload in the Info tab.
 - [X] Fix the ESP giving some weird hitch effect when rendering the visuals around players. (Looks to be completed, but needs more testing)
 - [X] Re-implement the Visuals to toggle ESP on and off, it's currently always on for debugging purposes.
-- [ ] Add more features to the cheat, like aimbot, triggerbot, etc.
+- [ ] Add more features to the cheat, like aimbot, triggerbot, etc. (Aimbot is implemented, but jank atm)
 - [X] Make the Weapon ESP more accurate, currently it just says the weapon name is a Knife which is not true.
 ## Usage
 1. Clone the repository.

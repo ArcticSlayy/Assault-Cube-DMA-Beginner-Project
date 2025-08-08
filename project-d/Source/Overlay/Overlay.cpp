@@ -11,7 +11,11 @@
 
 #include "imgui/imgui.h"
 #include "imgui/imgui_internal.h"
-
+/*
+If you want to change the icons or see what all icons there are available, you can use the font viewwer I have that works with the font_awesome.h/cpp.
+To use it, just uncomment the line below. Then open the normal menu which in my current case is Insert, then once the menu is open, press F10 to open the icon viewer.
+*/
+// #define SHOW_ICON_FONT_VIEWER
 ID3D11Device* Overlay::device = nullptr;
 
 ID3D11DeviceContext* Overlay::device_context = nullptr;
@@ -28,6 +32,7 @@ ImFont* tabFont = nullptr;   // Tab font (16.5pt)
 ImFont* featureFont = nullptr; // Feature font (15pt)
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+static const ImVec4 blueAccent = ImVec4(0.22f, 0.40f, 0.80f, 1.00f);
 
 LRESULT CALLBACK window_procedure(HWND window, UINT msg, WPARAM wParam, LPARAM lParam)
 {
@@ -409,7 +414,6 @@ void Overlay::StyleMenu(ImGuiIO& IO, ImGuiStyle& style)
     // Colors
     ImVec4 darkBg = ImVec4(0.102f, 0.102f, 0.102f, 1.00f); // #1A1A1A
     ImVec4 buttonBg = ImVec4(0.16f, 0.16f, 0.16f, 1.00f); // Slightly lighter for contrast
-    ImVec4 blueAccent = ImVec4(0.22f, 0.40f, 0.80f, 1.00f);
     style.Colors[ImGuiCol_WindowBg]           = darkBg;
     style.Colors[ImGuiCol_ChildBg]            = darkBg;
     style.Colors[ImGuiCol_FrameBg]            = darkBg;
@@ -477,6 +481,35 @@ void Overlay::RenderMenu()
     StyleMenu(io, style);
     float OverlayFps = ImGui::GetIO().Framerate;
 
+#ifdef SHOW_ICON_FONT_VIEWER
+    // --- Icon Font Debug Viewer ---
+    static bool showIconFontViewer = false;
+    if (ImGui::IsKeyPressed(ImGuiKey_F10))
+        showIconFontViewer = !showIconFontViewer;
+    if (showIconFontViewer && iconFont)
+    {
+        ImGui::SetNextWindowSize(ImVec2(900, 600), ImGuiCond_FirstUseEver); // Wider default size
+        ImGui::Begin("Font Awesome Glyphs", &showIconFontViewer, ImGuiWindowFlags_NoCollapse); // Resizable by default
+        ImGui::Text("Available Font Awesome glyphs in loaded font:");
+        ImGui::Separator();
+        ImGui::PushFont(iconFont);
+        int columns = 16;
+        ImGui::Columns(columns, nullptr, false);
+        for (int i = 0; i < iconFont->Glyphs.Size; ++i)
+        {
+            ImFontGlyph& glyph = iconFont->Glyphs[i];
+            char buf[8] = { 0 };
+            ImTextCharToUtf8(buf, glyph.Codepoint);
+            ImGui::Text("%s", buf);
+            ImGui::TextDisabled("U+%04X", glyph.Codepoint);
+            ImGui::NextColumn();
+        }
+        ImGui::Columns(1);
+        ImGui::PopFont();
+        ImGui::End();
+    }
+#endif
+
     ImGui::SetNextWindowSize(ImVec2(1100, 750), ImGuiCond_Always);
     ImGui::Begin("Aetherial", &shouldRenderMenu, ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
@@ -502,17 +535,18 @@ void Overlay::RenderMenu()
     float totalWidth = iconSize + 18.0f + textDim.x;
     float centerX = (winSize.x - totalWidth) * 0.5f;
     float centerY = paddingY + (titleBarHeight - 2 * paddingY - ImMax(iconSize, textSize)) / 2.0f;
-    float iconY = centerY + (ImMax(iconSize, textSize) - iconSize) / 2.0f;
+    float iconYOffset = 4.2f; // Adjust this value as needed (try 2.0f - 6.0f)
+    float iconY = centerY + (ImMax(iconSize, textSize) - iconSize) / 2.0f + iconYOffset;
     float textY = centerY + (ImMax(iconSize, textSize) - textSize) / 2.0f;
     float startX = centerX;
     ImGui::SetCursorPos(ImVec2(startX, iconY));
     ImGui::PushFont(iconFont);
-    ImGui::Text(ICON_FA_BOOK);
+    ImGui::TextColored(blueAccent, ICON_FA_MOON);
     ImGui::PopFont();
     ImGui::SameLine(0, 18.0f);
     ImGui::SetCursorPos(ImVec2(startX + iconSize + 18.0f, textY));
     ImGui::PushFont(titleFont);
-    ImGui::TextColored(ImVec4(0.95f, 0.96f, 0.98f, 1.0f), "%s", titleText);
+    ImGui::TextColored(ImVec4(0.95f, 0.96f, 0.98f, 1.00f), "%s", titleText);
     ImGui::PopFont();
     ImGui::Dummy(ImVec2(0, titleBarHeight - ImMax(iconSize, textSize)));
 
