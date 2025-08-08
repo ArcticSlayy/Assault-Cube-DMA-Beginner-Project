@@ -7,6 +7,7 @@
 #include <thread>
 #include <chrono>
 #include <set>
+#include <spdlog/spdlog.h>
 
 namespace EntityManager {
     std::vector<EntityData> entities;
@@ -15,7 +16,10 @@ namespace EntityManager {
     void UpdateEntities() {
         constexpr int MAX_PLAYERS = 32;
         Matrix newViewMatrix; // Temporary view matrix
+        int dmaErrorCount = 0;
+        auto lastLogTime = std::chrono::steady_clock::now();
         while (Globals::Running) {
+            auto start = std::chrono::steady_clock::now();
             // Always update view matrix, even if entity reads fail
             auto scatterGlobals = mem.CreateScatterHandle();
             int playerCount = 0;
@@ -32,6 +36,8 @@ namespace EntityManager {
                 mem.ExecuteReadScatter(scatterGlobals);
                 mem.CloseScatterHandle(scatterGlobals);
                 globalsReadOk = true;
+            } else {
+                dmaErrorCount++;
             }
             // Update view matrix every frame
             Globals::ViewMatrix = newViewMatrix;
@@ -41,6 +47,7 @@ namespace EntityManager {
             uint32_t entityAddrs[MAX_PLAYERS] = {};
             if (!scatterEntities) {
                 allReadsSuccessful = false;
+                dmaErrorCount++;
             }
             if (allReadsSuccessful) {
                 for (int i = 1; i < MAX_PLAYERS; i++) {
@@ -64,6 +71,7 @@ namespace EntityManager {
             int entityWeaponId[MAX_PLAYERS] = {};
             if (!scatterData) {
                 allReadsSuccessful = false;
+                dmaErrorCount++;
             }
             if (allReadsSuccessful) {
                 for (int i = 1; i < playerCount && i < MAX_PLAYERS; i++) {
@@ -86,6 +94,7 @@ namespace EntityManager {
             auto scatterWeaponId = mem.CreateScatterHandle();
             if (!scatterWeaponId) {
                 allReadsSuccessful = false;
+                dmaErrorCount++;
             }
             if (allReadsSuccessful) {
                 for (int i = 1; i < playerCount && i < MAX_PLAYERS; i++) {
@@ -135,6 +144,7 @@ namespace EntityManager {
 
 void ESP::Render(ImDrawList* drawList)
 {
+    auto start = std::chrono::steady_clock::now();
     int width = (int)Screen.x;
     int height = (int)Screen.y;
     int localPlayerTeam = 0;
@@ -252,9 +262,10 @@ void ESP::Render(ImDrawList* drawList)
                 (int)(config.Visuals.WeaponColor.w * 255)
             );
             ImVec2 weaponTextSize = ImGui::CalcTextSize(entity.weaponName.c_str());
-            // Lower the icon Y to better align with text
-            ImVec2 weaponPos(footScreenPos.x - weaponTextSize.x / 2.0f, footScreenPos.y + 10.0f); // was +5.0f
+            ImVec2 weaponPos(footScreenPos.x - weaponTextSize.x / 2.0f, footScreenPos.y + 10.0f);
             drawList->AddText(weaponPos, weaponColor, entity.weaponName.c_str());
         }
     }
+    auto end = std::chrono::steady_clock::now();
+    spdlog::info("ESP::Render: {} us", std::chrono::duration_cast<std::chrono::microseconds>(end - start).count());
 }

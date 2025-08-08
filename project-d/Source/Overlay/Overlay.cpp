@@ -1,5 +1,7 @@
 #include <Pch.hpp>
 #include <SDK.hpp>
+#include <chrono>
+#include <spdlog/spdlog.h>
 
 #include "Overlay.hpp"
 #include "Fonts/IBMPlexMono_Medium.h"
@@ -261,33 +263,27 @@ bool Overlay::CreateImGui()
 	}
 
 	// Font loading (only ONCE, after context is created)
-	ImGuiIO& IO = ImGui::GetIO();
-    // Title font: Tahoma Bold, 36pt (make it much bigger)
-    titleFont = IO.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\TahomaBD.ttf", 35.0f, nullptr, IO.Fonts->GetGlyphRangesDefault());
-    // Tab font: Tahoma Regular, 20pt
-    tabFont = IO.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\Tahoma.ttf", 20.0f, nullptr, IO.Fonts->GetGlyphRangesDefault());
-    // Feature font: Tahoma Regular, 18pt
-    featureFont = IO.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\Tahoma.ttf", 18.0f, nullptr, IO.Fonts->GetGlyphRangesDefault());
-    // Main font (for default text)
-    ImFont* MainFont = tabFont; // Use tabFont as default
-    IO.FontDefault = MainFont;
-    //ImFont* MainFont = IO.Fonts->AddFontFromMemoryCompressedTTF(IBMPlexMono_Medium_compressed_data, IBMPlexMono_Medium_compressed_size, 16, nullptr, IO.Fonts->GetGlyphRangesDefault());
-    static const ImWchar icon_ranges[] = { 0xf000, 0xf8ff, 0 };
-    ImFontConfig icons_config;
-	icons_config.MergeMode = true;
-	icons_config.PixelSnapH = true;
-	icons_config.OversampleH = 3;
-	icons_config.OversampleV = 3;
-	iconFont = IO.Fonts->AddFontFromMemoryCompressedTTF(font_awesome_data, font_awesome_size, 28.0f, &icons_config, icon_ranges); // Make icon bigger too
-    IO.IniFilename = nullptr;
-
-	// Build font atlas to ensure fonts are loaded
-	unsigned char* pixels = nullptr;
-	int width = 0, height = 0;
-	IO.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
-
-
-
+	static bool fontAtlasBuilt = false;
+	if (!fontAtlasBuilt) {
+		ImGuiIO& IO = ImGui::GetIO();
+        titleFont = IO.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\TahomaBD.ttf", 35.0f, nullptr, IO.Fonts->GetGlyphRangesDefault());
+        tabFont = IO.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\Tahoma.ttf", 20.0f, nullptr, IO.Fonts->GetGlyphRangesDefault());
+        featureFont = IO.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\Tahoma.ttf", 18.0f, nullptr, IO.Fonts->GetGlyphRangesDefault());
+        ImFont* MainFont = tabFont;
+        IO.FontDefault = MainFont;
+        static const ImWchar icon_ranges[] = { 0xf000, 0xf8ff, 0 };
+        ImFontConfig icons_config;
+        icons_config.MergeMode = true;
+        icons_config.PixelSnapH = true;
+        icons_config.OversampleH = 3;
+        icons_config.OversampleV = 3;
+        iconFont = IO.Fonts->AddFontFromMemoryCompressedTTF(font_awesome_data, font_awesome_size, 28.0f, &icons_config, icon_ranges);
+        IO.IniFilename = nullptr;
+        unsigned char* pixels = nullptr;
+        int width = 0, height = 0;
+        IO.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
+        fontAtlasBuilt = true;
+    }
 	return true;
 }
 
@@ -306,8 +302,10 @@ void Overlay::SetForeground(HWND window)
 
 void Overlay::StartRender()
 {
-	MSG msg;
-	while (PeekMessage(&msg, nullptr, 0U, 0U, PM_REMOVE))
+    static std::chrono::steady_clock::time_point frameStart;
+    frameStart = std::chrono::steady_clock::now();
+    MSG msg;
+    while (PeekMessage(&msg, nullptr, 0U, 0U, PM_REMOVE))
 	{
 		TranslateMessage(&msg);
 		DispatchMessage(&msg);
@@ -334,7 +332,9 @@ void Overlay::StartRender()
 
 void Overlay::EndRender()
 {
+    auto beforeRender = std::chrono::steady_clock::now();
     ImGui::Render();
+    auto afterRender = std::chrono::steady_clock::now();
 
     float color[4];
     if (config.Visuals.Background) // Black bg
@@ -351,10 +351,26 @@ void Overlay::EndRender()
 
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 
+    auto beforePresent = std::chrono::steady_clock::now();
     swap_chain->Present(config.Visuals.VSync ? 1U : 0U, 0U);
+    auto afterPresent = std::chrono::steady_clock::now();
 
     // Ensure overlay stays topmost every frame to prevent flicker
     SetWindowPos(overlay, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+
+    // Log timings for diagnostics
+    static int frameCount = 0;
+    frameCount++;
+    if (frameCount % 60 == 0) { // Log every 60 frames
+        auto frameStart = beforeRender; // Use beforeRender as frame start
+        auto frameEnd = afterPresent;
+        spdlog::info("Overlay timings (us): NewFrame+Render={} | RenderDrawData={} | Present={} | FullFrame={}",
+            std::chrono::duration_cast<std::chrono::microseconds>(beforeRender - frameStart).count(),
+            std::chrono::duration_cast<std::chrono::microseconds>(afterRender - beforeRender).count(),
+            std::chrono::duration_cast<std::chrono::microseconds>(afterPresent - beforePresent).count(),
+            std::chrono::duration_cast<std::chrono::microseconds>(frameEnd - frameStart).count()
+        );
+    }
 }
 
 void Overlay::StyleMenu(ImGuiIO& IO, ImGuiStyle& style)
