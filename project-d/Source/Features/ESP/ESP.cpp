@@ -1,3 +1,4 @@
+//#define ESP_LOGGING_ENABLED
 #include <Pch.hpp>
 #include <SDK.hpp>
 #include "ESP.hpp"
@@ -10,7 +11,11 @@
 #include <spdlog/spdlog.h>
 
 namespace EntityManager {
-    std::vector<EntityData> entities;
+    // Double buffer for entities
+    std::vector<EntityData> entitiesA;
+    std::vector<EntityData> entitiesB;
+    std::vector<EntityData>* renderEntities = &entitiesA;
+    std::vector<EntityData>* updateEntities = &entitiesB;
     std::mutex entities_mutex;
 
     void UpdateEntities() {
@@ -18,7 +23,15 @@ namespace EntityManager {
         Matrix newViewMatrix; // Temporary view matrix
         int dmaErrorCount = 0;
         auto lastLogTime = std::chrono::steady_clock::now();
+        static auto lastUpdate = std::chrono::steady_clock::now();
         while (Globals::Running) {
+            auto now = std::chrono::steady_clock::now();
+            // Throttle to 60Hz
+            if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastUpdate).count() < 16) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                continue;
+            }
+            lastUpdate = now;
             auto start = std::chrono::steady_clock::now();
             // Always update view matrix, even if entity reads fail
             auto scatterGlobals = mem.CreateScatterHandle();
@@ -43,9 +56,9 @@ namespace EntityManager {
             Globals::ViewMatrix = newViewMatrix;
 
             bool allReadsSuccessful = globalsReadOk;
-            uint32_t entityAddrs[MAX_PLAYERS] = {};
-            // 1. Read all entity addresses in one scatter
+            std::vector<uint32_t> entityAddrs(MAX_PLAYERS, 0);
             auto scatterEntities = mem.CreateScatterHandle();
+            auto t_addr_start = std::chrono::steady_clock::now();
             if (!scatterEntities) {
                 allReadsSuccessful = false;
                 dmaErrorCount++;
@@ -57,10 +70,14 @@ namespace EntityManager {
                 mem.ExecuteReadScatter(scatterEntities);
                 mem.CloseScatterHandle(scatterEntities);
             }
+            auto t_addr_end = std::chrono::steady_clock::now();
+#ifdef ESP_LOGGING_ENABLED
+            spdlog::info("ScatterRead: Entity addresses took {} us", std::chrono::duration_cast<std::chrono::microseconds>(t_addr_end - t_addr_start).count());
+#endif
 
-            // 2. Read i_dead for all valid entity addresses
-            bool entityDead[MAX_PLAYERS] = {};
+            std::vector<uint8_t> entityDead(MAX_PLAYERS, 0); // FIX: use uint8_t instead of bool
             auto scatterDead = mem.CreateScatterHandle();
+            auto t_dead_start = std::chrono::steady_clock::now();
             if (!scatterDead) {
                 allReadsSuccessful = false;
                 dmaErrorCount++;
@@ -73,18 +90,20 @@ namespace EntityManager {
                 mem.ExecuteReadScatter(scatterDead);
                 mem.CloseScatterHandle(scatterDead);
             }
+            auto t_dead_end = std::chrono::steady_clock::now();
+#ifdef ESP_LOGGING_ENABLED
+            spdlog::info("ScatterRead: Dead check took {} us", std::chrono::duration_cast<std::chrono::microseconds>(t_dead_end - t_dead_start).count());
+#endif
 
-            // 3. Batch read all other properties for alive entities only
-            int entityHealth[MAX_PLAYERS] = {};
-            int entityTeam[MAX_PLAYERS] = {};
-            int entityScore[MAX_PLAYERS] = {};
-            int entityKills[MAX_PLAYERS] = {};
-            int entityDeaths[MAX_PLAYERS] = {};
-            Vector3 entityHeadPos[MAX_PLAYERS] = {};
-            Vector3 entityFootPos[MAX_PLAYERS] = {};
-            char entityNames[MAX_PLAYERS][260] = {};
-            uint32_t weaponPtrs[MAX_PLAYERS] = {};
+            std::vector<int> entityHealth(MAX_PLAYERS, 0);
+            std::vector<int> entityTeam(MAX_PLAYERS, 0);
+            std::vector<Vector3> entityHeadPos(MAX_PLAYERS);
+            std::vector<Vector3> entityFootPos(MAX_PLAYERS);
+            std::vector<std::array<char, 260>> nameBufs(MAX_PLAYERS);
+            std::vector<std::string> entityNames(MAX_PLAYERS);
+            std::vector<uint32_t> weaponPtrs(MAX_PLAYERS, 0);
             auto scatterData = mem.CreateScatterHandle();
+            auto t_data_start = std::chrono::steady_clock::now();
             if (!scatterData) {
                 allReadsSuccessful = false;
                 dmaErrorCount++;
@@ -94,21 +113,26 @@ namespace EntityManager {
                     if (!entityAddrs[i] || entityDead[i]) continue;
                     mem.AddScatterReadRequest(scatterData, entityAddrs[i] + p_entity->i_health, &entityHealth[i], sizeof(entityHealth[i]));
                     mem.AddScatterReadRequest(scatterData, entityAddrs[i] + p_entity->i_team, &entityTeam[i], sizeof(entityTeam[i]));
-                    mem.AddScatterReadRequest(scatterData, entityAddrs[i] + p_entity->i_score, &entityScore[i], sizeof(entityScore[i]));
-                    mem.AddScatterReadRequest(scatterData, entityAddrs[i] + p_entity->i_kills, &entityKills[i], sizeof(entityKills[i]));
-                    mem.AddScatterReadRequest(scatterData, entityAddrs[i] + p_entity->i_deaths, &entityDeaths[i], sizeof(entityDeaths[i]));
                     mem.AddScatterReadRequest(scatterData, entityAddrs[i] + p_entity->v3_head_pos, &entityHeadPos[i], sizeof(entityHeadPos[i]));
                     mem.AddScatterReadRequest(scatterData, entityAddrs[i] + p_entity->v3_foot_pos, &entityFootPos[i], sizeof(entityFootPos[i]));
-                    mem.AddScatterReadRequest(scatterData, entityAddrs[i] + p_entity->str_name, entityNames[i], sizeof(entityNames[i]));
+                    mem.AddScatterReadRequest(scatterData, entityAddrs[i] + p_entity->str_name, nameBufs[i].data(), nameBufs[i].size());
                     mem.AddScatterReadRequest(scatterData, entityAddrs[i] + p_entity->weapon_class, &weaponPtrs[i], sizeof(weaponPtrs[i]));
                 }
                 mem.ExecuteReadScatter(scatterData);
                 mem.CloseScatterHandle(scatterData);
+                // Assign names after scatter read
+                for (int i = 1; i < playerCount && i < MAX_PLAYERS; i++) {
+                    entityNames[i] = std::string(nameBufs[i].data());
+                }
             }
+            auto t_data_end = std::chrono::steady_clock::now();
+#ifdef ESP_LOGGING_ENABLED
+            spdlog::info("ScatterRead: Entity data took {} us", std::chrono::duration_cast<std::chrono::microseconds>(t_data_end - t_data_start).count());
+#endif
 
-            // 4. Batch read weapon IDs for entities with valid weaponPtrs
-            int entityWeaponId[MAX_PLAYERS] = {};
+            std::vector<int> entityWeaponId(MAX_PLAYERS, 0);
             auto scatterWeaponId = mem.CreateScatterHandle();
+            auto t_weapon_start = std::chrono::steady_clock::now();
             if (!scatterWeaponId) {
                 allReadsSuccessful = false;
                 dmaErrorCount++;
@@ -121,20 +145,20 @@ namespace EntityManager {
                 mem.ExecuteReadScatter(scatterWeaponId);
                 mem.CloseScatterHandle(scatterWeaponId);
             }
+            auto t_weapon_end = std::chrono::steady_clock::now();
+#ifdef ESP_LOGGING_ENABLED
+            spdlog::info("ScatterRead: Weapon IDs took {} us", std::chrono::duration_cast<std::chrono::microseconds>(t_weapon_end - t_weapon_start).count());
+#endif
 
             // Update entity cache if all reads succeed and there are valid entities
             if (allReadsSuccessful && playerCount > 0) {
-                std::vector<EntityData> new_entities;
+                updateEntities->clear();
                 for (int i = 1; i < playerCount && i < MAX_PLAYERS; i++) {
                     if (!entityAddrs[i] || entityDead[i]) continue;
-                    entityNames[i][259] = '\0';
                     EntityData entityData;
-                    entityData.name = std::string(entityNames[i]);
+                    entityData.name = entityNames[i];
                     entityData.health = entityHealth[i];
                     entityData.team = entityTeam[i];
-                    entityData.score = entityScore[i];
-                    entityData.kills = entityKills[i];
-                    entityData.deaths = entityDeaths[i];
                     entityData.headPosition = entityHeadPos[i];
                     entityData.footPosition = entityFootPos[i];
                     entityData.weaponClass = entityWeaponId[i];
@@ -142,25 +166,32 @@ namespace EntityManager {
                         entityData.weaponName = offsets->arr_weapon_names[entityWeaponId[i]];
                     else
                         entityData.weaponName = "Unknown";
-                    new_entities.push_back(entityData);
+                    updateEntities->push_back(entityData);
                 }
-                if (!new_entities.empty()) {
+                if (!updateEntities->empty()) {
                     std::lock_guard<std::mutex> lock(entities_mutex);
-                    entities = std::move(new_entities);
+                    std::swap(renderEntities, updateEntities);
                 }
-                // If new_entities is empty, do NOT update entities!
             }
             // If any read failed, do NOT clear or update entities!
-            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+            // No need to sleep here, throttling is handled above
             auto end = std::chrono::steady_clock::now();
             auto duration_us = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+#ifdef ESP_LOGGING_ENABLED
             if (duration_us > 20000) { // Log if update takes >20ms
                 spdlog::warn("UpdateEntities took {} us (dmaErrorCount={})", duration_us, dmaErrorCount);
             }
+#endif
         }
     }
     void StartEntityUpdateThread() {
-        std::thread(UpdateEntities).detach();
+        std::thread([]{
+            // Lower thread priority to avoid competing with rendering
+            #ifdef _WIN32
+            SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+            #endif
+            UpdateEntities();
+        }).detach();
     }
 }
 
@@ -180,10 +211,12 @@ void ESP::Render(ImDrawList* drawList)
             std::lock_guard<std::mutex> lock(EntityManager::entities_mutex);
             auto mutexWaitEnd = std::chrono::steady_clock::now();
             auto mutexWait_us = std::chrono::duration_cast<std::chrono::microseconds>(mutexWaitEnd - mutexWaitStart).count();
+#ifdef ESP_LOGGING_ENABLED
             if (mutexWait_us > 1000) { // Log if mutex wait >1ms
                 spdlog::warn("ESP::Render mutex wait: {} us", mutexWait_us);
             }
-            entitiesCopy = EntityManager::entities;
+#endif
+            entitiesCopy = *EntityManager::renderEntities;
             if (!entitiesCopy.empty())
                 localPlayerTeam = entitiesCopy[0].team;
         }
@@ -297,5 +330,7 @@ void ESP::Render(ImDrawList* drawList)
         }
     }
     auto end = std::chrono::steady_clock::now();
-    //spdlog::info("ESP::Render: {} us", std::chrono::duration_cast<std::chrono::microseconds>(end - start).count());
+#ifdef ESP_LOGGING_ENABLED
+    spdlog::info("ESP::Render: {} us", std::chrono::duration_cast<std::chrono::microseconds>(end - start).count());
+#endif
 }

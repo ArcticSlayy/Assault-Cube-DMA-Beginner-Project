@@ -361,6 +361,7 @@ void Overlay::EndRender()
     // Log timings for diagnostics
     static int frameCount = 0;
     frameCount++;
+#ifdef OVERLAY_LOGGING_ENABLED
     if (frameCount % 60 == 0) { // Log every 60 frames
         auto frameStart = beforeRender; // Use beforeRender as frame start
         auto frameEnd = afterPresent;
@@ -371,6 +372,7 @@ void Overlay::EndRender()
             std::chrono::duration_cast<std::chrono::microseconds>(frameEnd - frameStart).count()
         );
     }
+#endif
 }
 
 void Overlay::StyleMenu(ImGuiIO& IO, ImGuiStyle& style)
