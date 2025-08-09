@@ -47,7 +47,7 @@ public:
 
 	bool Init()
 	{
-		InitAimbot();
+		//InitAimbot();
 		return true;
 	}
 };
