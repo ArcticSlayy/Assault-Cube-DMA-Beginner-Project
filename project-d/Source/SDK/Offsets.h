@@ -26,6 +26,10 @@ public:
 		int entity_list = 0x10F4F8;
 		int player_count = 0x10F500;
 		int player_in_crosshair = 0x101C38;
+		// For the game mode ID list you can view this site: https://wiki.cubers.net/action/view/Gamemodes
+		//8 and 1 are Deathmatch, one of them are just specific the bot version of it.
+		int game_mode = 0x50F49C;
+		
 	};
 
 	class Entity // dw_module
