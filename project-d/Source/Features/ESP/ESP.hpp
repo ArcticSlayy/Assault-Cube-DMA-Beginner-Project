@@ -8,6 +8,21 @@
 
 // Forward declarations
 namespace EntityManager {
+    // Batch process all screen positions first to improve cache locality
+    struct EntityRenderData {
+        const EntityData* entity;
+        Vector2 headScreenPos;
+        Vector2 footScreenPos;
+        float boxWidth;
+        float boxHeight;
+        float boxX;
+        float boxY;
+        float opacity;
+        float distance;  // 3D distance from camera
+        bool valid;
+        struct EntityHistory* history;
+    };
+    
     // Triple buffer system for entities
     struct EntityBuffer;
     struct EntityHistory;
@@ -41,7 +56,24 @@ namespace EntityManager {
     extern const int MIN_UPDATE_RATE_MS;
     extern const int MAX_UPDATE_RATE_MS;
     
+    // Animation constants
+    extern const float ANIMATION_SPEED_BASE;
+    extern const float ANIMATION_SPEED_FAST;
+    
+    // Box size stability controls
+    extern const float MIN_BOX_HEIGHT;
+    extern const float MAX_BOX_HEIGHT;
+    extern const float MAX_BOX_HEIGHT_CHANGE_RATE;
+    extern const float MIN_BOX_WIDTH;
+    
     // Helper functions
+    template <typename T>
+    T Clamp(T value, T min, T max) {
+        if (value < min) return min;
+        if (value > max) return max;
+        return value;
+    }
+    
     bool IsPositionValid(const Vector3& pos);
     bool IsPositionChangeValid(const Vector3& oldPos, const Vector3& newPos, float maxDist);
     float VectorMagnitude(const Vector3& v);

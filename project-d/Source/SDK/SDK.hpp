@@ -25,8 +25,11 @@ public:
 		}).detach();
 	}
 
-	// WorldToScreen using column-major float[16] (mythos style)
+	// Optimized WorldToScreen using column-major matrix
 	bool WorldToScreen(const Vector3& pos, Vector2& out, const Matrix& matrix, int width, int height);
+	
+	// Batch version for multiple world positions - useful for future optimizations
+	bool WorldToScreenBatch(const Vector3* positions, Vector2* outputs, int count, const Matrix& matrix, int width, int height);
 };
 
 inline SDK& sdk = SDK::Get();

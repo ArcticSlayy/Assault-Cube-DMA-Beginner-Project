@@ -309,30 +309,32 @@ void Overlay::StartRender()
 {
     static std::chrono::steady_clock::time_point frameStart;
     frameStart = std::chrono::steady_clock::now();
+    
+    // Process Windows messages efficiently with a small timeout
     MSG msg;
-    while (PeekMessage(&msg, nullptr, 0U, 0U, PM_REMOVE))
-	{
-		TranslateMessage(&msg);
-		DispatchMessage(&msg);
-	}
+    while (PeekMessage(&msg, nullptr, 0U, 0U, PM_REMOVE)) {
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
+    }
 
-	ImGui_ImplDX11_NewFrame();
-	ImGui_ImplWin32_NewFrame();
-	ImGui::NewFrame();
+    ImGui_ImplDX11_NewFrame();
+    ImGui_ImplWin32_NewFrame();
+    ImGui::NewFrame();
 
-	if (GetAsyncKeyState(VK_INSERT) & 1)
-	{
-		shouldRenderMenu = !shouldRenderMenu;
+    // Check for menu toggle key
+    if (GetAsyncKeyState(VK_INSERT) & 1)
+    {
+        shouldRenderMenu = !shouldRenderMenu;
 
-		if (shouldRenderMenu)
-		{
-			SetWindowLong(overlay, GWL_EXSTYLE, WS_EX_TOOLWINDOW);
-		}
-		else
-		{
-			SetWindowLong(overlay, GWL_EXSTYLE, WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT | WS_EX_LAYERED);
-		}
-	}
+        if (shouldRenderMenu)
+        {
+            SetWindowLong(overlay, GWL_EXSTYLE, WS_EX_TOOLWINDOW);
+        }
+        else
+        {
+            SetWindowLong(overlay, GWL_EXSTYLE, WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT | WS_EX_LAYERED);
+        }
+    }
 }
 
 void Overlay::EndRender()
@@ -367,11 +369,19 @@ void Overlay::EndRender()
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 
     auto beforePresent = std::chrono::steady_clock::now();
-    swap_chain->Present(config.Visuals.VSync ? 1U : 0U, 0U);
+    
+    // Use DXGI_PRESENT_DO_NOT_WAIT to prevent blocking on VSync if possible
+    UINT presentFlags = 0;
+    if (!config.Visuals.VSync) {
+        presentFlags = 0; // Use 0 for immediate mode
+    }
+    
+    HRESULT hr = swap_chain->Present(config.Visuals.VSync ? 1 : 0, presentFlags);
+    
     auto afterPresent = std::chrono::steady_clock::now();
 
     // Ensure overlay stays topmost every frame to prevent flicker
-    SetWindowPos(overlay, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+    SetWindowPos(overlay, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 
     // Log timings for diagnostics
     static int frameCount = 0;
