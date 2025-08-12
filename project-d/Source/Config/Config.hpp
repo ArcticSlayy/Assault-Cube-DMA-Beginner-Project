@@ -80,6 +80,7 @@ namespace Config
             j["Visuals"]["HitmarkerColor"] = { Visuals.HitmarkerColor.x, Visuals.HitmarkerColor.y, Visuals.HitmarkerColor.z, Visuals.HitmarkerColor.w };
             j["Visuals"]["Watermark"] = Visuals.Watermark;
             j["Visuals"]["WatermarkColor"] = { Visuals.WatermarkColor.x, Visuals.WatermarkColor.y, Visuals.WatermarkColor.z, Visuals.WatermarkColor.w };
+            j["Visuals"]["WatermarkPos"] = static_cast<int>(Visuals.WatermarkPos);
 
             j["Visuals"]["Name"] = Visuals.Name;
             j["Visuals"]["NameColor"] = { Visuals.NameColor.x, Visuals.NameColor.y, Visuals.NameColor.z, Visuals.NameColor.w };
@@ -257,6 +258,7 @@ namespace Config
                 j["Visuals"]["HitmarkerColor"] = { 1.0f, 1.0f, 1.0f, 1.0f };
                 j["Visuals"]["Watermark"] = false;
                 j["Visuals"]["WatermarkColor"] = { 1.0f, 1.0f, 1.0f, 1.0f };
+                j["Visuals"]["WatermarkPos"] = static_cast<int>(Structs::WatermarkPosition::TopRight);
 
                 j["Visuals"]["Name"] = false;
                 j["Visuals"]["NameColor"] = { 1.0f, 1.0f, 1.0f, 1.0f };
@@ -323,6 +325,7 @@ namespace Config
                             else if (key == "Hitmarker") configSection.Hitmarker = value.get<bool>();
                             else if (key == "HitmarkerColor") configSection.HitmarkerColor = ImVec4(value[0].get<float>(), value[1].get<float>(), value[2].get<float>(), value[3].get<float>());
                             else if (key == "Watermark") configSection.Watermark = value.get<bool>();
+                            else if (key == "WatermarkPos") configSection.WatermarkPos = static_cast<Structs::WatermarkPosition>(value.get<int>());
 
                             else if (key == "Name") configSection.Name = value.get<bool>();
                             else if (key == "Box") configSection.Box = value.get<bool>();

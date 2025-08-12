@@ -28,6 +28,9 @@ namespace EntityManager {
     EntityBuffer* updateBuffer = &bufferB;     // Written to by update thread
     EntityBuffer* spareBuffer = &bufferC;      // Ready to swap in when needed
     
+    // Atomic pointer for lock-free access by renderer
+    std::atomic<EntityBuffer*> atomicRenderBuffer{ &bufferA };
+    
     std::mutex buffer_mutex;                   // Protects buffer swapping
     std::atomic<bool> buffer_ready{false};     // Signals when a new buffer is ready
     
@@ -45,7 +48,8 @@ namespace EntityManager {
     
     // Per-entity history for position prediction
     struct EntityHistory {
-        std::string name;
+        std::string key;               // Unique key for identity (address/index/name)
+        std::string name;              // Display name
         Vector3 lastHeadPosition;
         Vector3 lastFootPosition;
         Vector3 previousHeadPosition;   // Position from 2 updates ago
@@ -85,29 +89,25 @@ namespace EntityManager {
     // for better cache locality and reduced memory fragmentation
     struct EntityHistoryCache {
         std::vector<EntityHistory> histories;
-        std::unordered_map<std::string, size_t> nameToIndex;
+        std::unordered_map<std::string, size_t> keyToIndex;
         std::mutex mutex;
         
-        EntityHistory* get(const std::string& name) {
+        EntityHistory* get(const std::string& key) {
             // First try a quick read-only lookup without locking
             {
-                // This is safe because we don't modify the map in this block
-                auto it = nameToIndex.find(name);
-                if (it != nameToIndex.end() && it->second < histories.size()) {
-                    // Found existing history, return pointer - no lock needed
+                auto it = keyToIndex.find(key);
+                if (it != keyToIndex.end() && it->second < histories.size()) {
                     return &histories[it->second];
                 }
             }
-            
             // Not found in read-only pass, need to lock and maybe add
             std::lock_guard<std::mutex> lock(mutex);
-            auto it = nameToIndex.find(name);
-            if (it == nameToIndex.end()) {
-                // Add new entity to cache
+            auto it = keyToIndex.find(key);
+            if (it == keyToIndex.end()) {
                 size_t index = histories.size();
                 histories.push_back(EntityHistory());
-                histories.back().name = name;
-                nameToIndex[name] = index;
+                histories.back().key = key;
+                keyToIndex[key] = index;
                 return &histories.back();
             }
             return &histories[it->second];
@@ -115,43 +115,33 @@ namespace EntityManager {
         
         void removeStaleEntities(int maxFailedFrames) {
             std::lock_guard<std::mutex> lock(mutex);
-            
-            // More efficient removal algorithm to minimize data movement
             size_t writeIndex = 0;
             std::unordered_map<std::string, size_t> newMap;
-            
-            // First pass: Mark entries to keep
             for (size_t i = 0; i < histories.size(); i++) {
                 if (histories[i].failedFrames <= maxFailedFrames) {
                     if (i != writeIndex) {
-                        // Move the history to its new position
                         histories[writeIndex] = std::move(histories[i]);
                     }
-                    // Update index mapping
-                    newMap[histories[writeIndex].name] = writeIndex;
+                    newMap[histories[writeIndex].key] = writeIndex;
                     writeIndex++;
                 }
             }
-            
-            // Resize the vector to remove stale entries
             if (writeIndex < histories.size()) {
                 histories.resize(writeIndex);
             }
-            
-            // Replace the map with the updated one
-            nameToIndex = std::move(newMap);
+            keyToIndex = std::move(newMap);
         }
         
         void clear() {
             std::lock_guard<std::mutex> lock(mutex);
             histories.clear();
-            nameToIndex.clear();
+            keyToIndex.clear();
         }
         
         // Get history without adding if not found
-        EntityHistory* tryGet(const std::string& name) {
-            auto it = nameToIndex.find(name);
-            if (it != nameToIndex.end() && it->second < histories.size()) {
+        EntityHistory* tryGet(const std::string& key) {
+            auto it = keyToIndex.find(key);
+            if (it != keyToIndex.end() && it->second < histories.size()) {
                 return &histories[it->second];
             }
             return nullptr;
@@ -292,18 +282,14 @@ namespace EntityManager {
             // Throttle based on dynamic update rate but allow first run immediately
             int currentUpdateRate = updateRate.load(std::memory_order_relaxed);
             if (!firstRun && std::chrono::duration_cast<std::chrono::milliseconds>(now - lastUpdate).count() < currentUpdateRate) {
-                // Use a precision sleep to avoid burning CPU, with adaptive sleep duration
-                // Use platform-specific sleep if available for better precision
                 #ifdef _WIN32
                 if (currentSleepMicroseconds <= 1000) {
-                    // For very short sleeps, use spinwait instead to avoid scheduler overhead
                     auto spinUntil = std::chrono::steady_clock::now() + std::chrono::microseconds(currentSleepMicroseconds);
                     while (std::chrono::steady_clock::now() < spinUntil) {
-                        // Yield to other threads but stay on the same core (if possible)
-                        _mm_pause();  // Intel/AMD specific pause instruction, reduces power consumption in spin loops
+                        _mm_pause();
                     }
                 } else {
-                    Sleep(0);  // Yield the remainder of the time slice to other threads
+                    Sleep(0);
                 }
                 #else
                 std::this_thread::sleep_for(std::chrono::microseconds(currentSleepMicroseconds));
@@ -312,7 +298,6 @@ namespace EntityManager {
             }
             
             firstRun = false;
-            auto frameStartTime = now;
             lastUpdate = now;
             auto start = std::chrono::steady_clock::now();
             
@@ -337,25 +322,14 @@ namespace EntityManager {
             
             // Update double buffered view matrix
             if (globalsReadOk) {
-                // Minimize lock contention by preparing data outside the lock
                 ViewMatrixBuffer newCurrentMatrix;
                 newCurrentMatrix.matrix = newViewMatrix;
                 newCurrentMatrix.timestamp = now;
-                
-                // Non-blocking matrix update - always prefer not blocking over consistency
-                // since a slightly outdated matrix is better than hitching
-                bool lockAcquired = false;
-                {
-                    if (viewMatrix_mutex.try_lock()) {
-                        previousViewMatrix = currentViewMatrix;
-                        currentViewMatrix = newCurrentMatrix;
-                        viewMatrix_mutex.unlock();
-                        lockAcquired = true;
-                    }
+                if (viewMatrix_mutex.try_lock()) {
+                    previousViewMatrix = currentViewMatrix;
+                    currentViewMatrix = newCurrentMatrix;
+                    viewMatrix_mutex.unlock();
                 }
-                
-                // Update global view matrix without locking - this is fine because
-                // matrix assignments are generally atomic for practical purposes on x86/x64
                 Globals::ViewMatrix = newViewMatrix;
             }
 
@@ -432,7 +406,6 @@ namespace EntityManager {
                 for (int i = 1; i < playerCount && i < MAX_PLAYERS; i++) {
                     if (!entityAddrs[i] || entityDead[i]) continue;
                     entityNames[i] = std::string(nameBufs[i].data());
-                    
                     // Basic validation to avoid garbage names
                     if (entityNames[i].empty() || entityNames[i].length() > 32) {
                         entityNames[i] = "Player_" + std::to_string(i);
@@ -461,8 +434,8 @@ namespace EntityManager {
                 updateBuffer->entities.clear();
                 updateBuffer->timestamp = std::chrono::steady_clock::now();
                 
-                // Store current names for history tracking
-                std::set<std::string> currentNames;
+                // Store current keys for history tracking
+                std::set<std::string> currentKeys;
                 
                 // First pass - collect data without locking
                 std::vector<EntityData> newEntities;
@@ -470,15 +443,12 @@ namespace EntityManager {
                 
                 for (int i = 1; i < playerCount && i < MAX_PLAYERS; i++) {
                     if (!entityAddrs[i] || entityDead[i]) continue;
-                    
                     // Skip if health is invalid
                     if (entityHealth[i] <= 0 || entityHealth[i] > 200) continue;
-                    
                     // Validate positions
                     if (!IsPositionValid(entityHeadPos[i]) || !IsPositionValid(entityFootPos[i])) {
                         continue;
                     }
-                    
                     EntityData entityData;
                     entityData.name = entityNames[i];
                     entityData.health = entityHealth[i];
@@ -486,24 +456,35 @@ namespace EntityManager {
                     entityData.headPosition = entityHeadPos[i];
                     entityData.footPosition = entityFootPos[i];
                     entityData.weaponClass = entityWeaponId[i];
-                    
+                    entityData.id = static_cast<uint64_t>(entityAddrs[i]);
+                    entityData.index = i;
                     if (entityWeaponId[i] >= 0 && entityWeaponId[i] < offsets->arr_weapon_names.size())
                         entityData.weaponName = offsets->arr_weapon_names[entityWeaponId[i]];
                     else
                         entityData.weaponName = "Unknown";
                     
+                    // Build unique key for this entity
+                    char keyBuf[128];
+                    snprintf(keyBuf, sizeof(keyBuf), "%s|%d|%llX|%d", entityData.name.c_str(), entityData.team, (unsigned long long)entityData.id, entityData.index);
+                    currentKeys.insert(std::string(keyBuf));
+                    
                     newEntities.push_back(entityData);
-                    currentNames.insert(entityData.name);
                 }
                 
                 // Second pass - update histories and apply to buffer
                 for (const auto& entityData : newEntities) {
+                    // Build key again (avoid extra allocations by reusing format)
+                    char keyBuf[128];
+                    snprintf(keyBuf, sizeof(keyBuf), "%s|%d|%llX|%d", entityData.name.c_str(), entityData.team, (unsigned long long)entityData.id, entityData.index);
+                    std::string key(keyBuf);
+                    
                     // Get entity history from cache (thread-safe)
-                    auto history = entityHistoryCache.get(entityData.name);
+                    auto history = entityHistoryCache.get(key);
                     
                     // Process entity data with history (no locks needed here)
                     if (history->lastUpdateTime.time_since_epoch().count() == 0) {
                         // Initialize history for new entities
+                        history->key = key;
                         history->name = entityData.name;
                         history->firstSeenTime = now;
                         history->lastHeadPosition = entityData.headPosition;
@@ -557,7 +538,6 @@ namespace EntityManager {
                                 };
                                 
                                 // Calculate jitter magnitude - use exponential decay to prevent spikes
-                                float jitterMag = VectorMagnitude(jitterVec);
                                 history->jitter = {
                                     history->jitter.x * 0.85f + jitterVec.x * 0.15f,
                                     history->jitter.y * 0.85f + jitterVec.y * 0.15f,
@@ -569,9 +549,6 @@ namespace EntityManager {
                                 float stabilityTarget = smoothedJitterMag < 5.0f ? 1.0f : 
                                                       (smoothedJitterMag > 50.0f ? 0.1f : 
                                                       (1.0f - (smoothedJitterMag - 5.0f) / 45.0f));
-                                
-
-
                                 
                                 // Smooth stability transition (slower transitions help reduce flickering)
                                 history->stabilityFactor = history->stabilityFactor * 0.97f + stabilityTarget * 0.03f;
@@ -603,7 +580,6 @@ namespace EntityManager {
                                 // Position jump too large - might be teleport or bad data
                                 history->failedFrames++;
                                 // Don't reset consecutive valid positions to 0 immediately
-                                // This helps maintain smoother transitions during occasional bad reads
                                 history->consecutiveValidPositions = std::max(0, history->consecutiveValidPositions - 2);
                                 history->positionConfidence = std::max(0.1f, history->positionConfidence - 0.05f);
                                 // Don't reduce stability factor too quickly to avoid flickering
@@ -620,17 +596,11 @@ namespace EntityManager {
                 }
                 
                 // Handle entities that disappeared this frame
-                // Process in batch using entityHistoryCache structure
                 for (auto& history : entityHistoryCache.histories) {
-                    if (currentNames.find(history.name) == currentNames.end()) {
-                        // Entity not found in current frame
+                    if (currentKeys.find(history.key) == currentKeys.end()) {
                         history.failedFrames++;
-                        // Don't reduce consecutive valid positions to 0 immediately
-                        // This helps maintain smoother transitions during occasional bad reads
                         history.consecutiveValidPositions = std::max(0, history.consecutiveValidPositions - 2);
                         history.positionConfidence = std::max(0.1f, history.positionConfidence - 0.025f);
-                        
-                        // Only mark as invalid if it's been gone too long
                         if (history.failedFrames > MAX_FAILED_FRAMES) {
                             history.isValid = false;
                         }
@@ -647,28 +617,19 @@ namespace EntityManager {
                 // Mark update buffer as ready
                 updateBuffer->ready = true;
                 
-                // Perform buffer swap with minimal locking - use try_lock to avoid hitching
-                // If we can't get the lock, skip this update - better to lose a frame than to hitch
-                bool bufferSwapped = false;
-                
-                if (buffer_mutex.try_lock()) {
+                // Perform buffer swap with a short critical section
+                {
+                    std::lock_guard<std::mutex> lg(buffer_mutex);
                     // Rotate buffers: render -> spare, update -> render, spare -> update
                     EntityBuffer* temp = renderBuffer;
                     renderBuffer = updateBuffer;
                     updateBuffer = spareBuffer;
                     spareBuffer = temp;
-                    
-                    // Update pointer for legacy code compatibility
+                    // Update pointers for renderer
                     renderEntities = &renderBuffer->entities;
-                    
-                    buffer_mutex.unlock();
-                    bufferSwapped = true;
+                    atomicRenderBuffer.store(renderBuffer, std::memory_order_release);
                 }
-                
-                // Only signal if we actually swapped
-                if (bufferSwapped) {
-                    buffer_ready.store(true, std::memory_order_release);
-                }
+                buffer_ready.store(true, std::memory_order_release);
             } else {
                 badReadCount.fetch_add(1, std::memory_order_relaxed);
             }
@@ -681,20 +642,17 @@ namespace EntityManager {
             if (duration_us > 4000) { // If frame took > 4ms
                 consecutiveSlowFrames++;
                 if (consecutiveSlowFrames > ADAPTIVE_SLEEP_THRESHOLD) {
-                    // Increase sleep time to reduce contention with rendering thread
                     currentSleepMicroseconds = std::min(2000, currentSleepMicroseconds + 50);
                 }
             } else {
                 consecutiveSlowFrames = std::max(0, consecutiveSlowFrames - 1);
                 if (consecutiveSlowFrames == 0) {
-                    // Gradually reduce sleep time when performance is good
-                    currentSleepMicroseconds = std::max(MIN_SLEEP_MICROSECONDS, 
-                                                      currentSleepMicroseconds - 25);
+                    currentSleepMicroseconds = std::max(MIN_SLEEP_MICROSECONDS, currentSleepMicroseconds - 25);
                 }
             }
 
 #ifdef ESP_LOGGING_ENABLED
-            if (duration_us > 10000) { // Log if update takes >10ms - reduced threshold
+            if (duration_us > 10000) {
                 spdlog::warn("UpdateEntities took {} us (dmaErrorCount={})", duration_us, dmaErrorCount);
             }
 #endif
@@ -771,424 +729,331 @@ namespace EntityManager {
 }
 
 // Thread-local storage for per-entity animation state
-// This prevents contention and locking for animation data
 thread_local struct {
     std::unordered_map<std::string, float> animHealthPerc;
     std::unordered_map<std::string, float> lastBoxWidths;
     std::unordered_map<std::string, float> lastBoxHeights;
-    
-    // Frame timing for animations
     float deltaTime = 0.016f;  // Default to 60fps
+    std::unordered_map<std::string, std::chrono::steady_clock::time_point> lastSeen;
+    
+    void cleanupStaleEntries(const std::chrono::steady_clock::time_point& now, 
+                             const std::chrono::seconds& maxAge = std::chrono::seconds(30)) {
+        std::vector<std::string> toRemove;
+        for (const auto& [key, lastSeenTime] : lastSeen) {
+            if (std::chrono::duration_cast<std::chrono::seconds>(now - lastSeenTime) > maxAge) {
+                toRemove.push_back(key);
+            }
+        }
+        for (const auto& key : toRemove) {
+            animHealthPerc.erase(key);
+            lastBoxWidths.erase(key);
+            lastBoxHeights.erase(key);
+            lastSeen.erase(key);
+        }
+#ifdef ESP_LOGGING_ENABLED
+        if (!toRemove.empty()) {
+            spdlog::debug("Cleaned up {} stale TLS animation entries", toRemove.size());
+        }
+#endif
+    }
+    
+    void updateLastSeen(const std::string& key, const std::chrono::steady_clock::time_point& now) {
+        lastSeen[key] = now;
+    }
 } tlsAnimationState;
 
 void ESP::Render(ImDrawList* drawList)
 {
-    // Skip rendering if visuals are disabled
     if (!config.Visuals.Enabled) return;
-    
+
+    // Timing and smoothing
+    static auto lastFrameMetricOutput = std::chrono::steady_clock::now();
+    static int frameCounter = 0;
+    static float avgRenderTime = 0.0f;
+    static float maxRenderTime = 0.0f;
+    static float minRenderTime = 9999.0f;
+    static bool showDebugInfo = false;
+
     auto frameStart = std::chrono::steady_clock::now();
-    
-    // Calculate delta time for smooth animations with protection against time jumps
     static auto lastFrameTime = std::chrono::steady_clock::now();
     float deltaTime = std::chrono::duration<float>(frameStart - lastFrameTime).count();
     lastFrameTime = frameStart;
-    
-    // Update EntityManager's lastRenderTime for coordination with update thread
     EntityManager::lastRenderTime = frameStart;
-    
-    // Cap delta time to prevent large jumps after freezes, alt-tabbing or FPS drops
-    const float MAX_DELTA_TIME = 0.05f; // 50ms maximum delta (20fps minimum)
+
+    // Toggle debug
+    static bool keyWasDown = false;
+    bool keyIsDown = GetAsyncKeyState(VK_F9) & 0x8000;
+    if (keyIsDown && !keyWasDown) {
+        showDebugInfo = !showDebugInfo;
+        spdlog::info("Debug visualization: {}", showDebugInfo ? "ON" : "OFF");
+    }
+    keyWasDown = keyIsDown;
+
+    // Clamp delta time
+    const float MAX_DELTA_TIME = 0.05f;
     deltaTime = std::min(std::max(deltaTime, 0.0f), MAX_DELTA_TIME);
-    
-    // Update thread-local delta time for animations
     tlsAnimationState.deltaTime = deltaTime;
-    
-    // Update average frame time for more stable animations (low-pass filter)
-    EntityManager::avgFrameTime = EntityManager::avgFrameTime * EntityManager::frameTimeSmoothing + 
-                                deltaTime * (1.0f - EntityManager::frameTimeSmoothing);
-    
-    // Use a consistent time step for animations to avoid jitter
-    float animationDeltaTime = std::min(deltaTime, 0.033f); // Cap at 30fps for animations
-    
+    EntityManager::avgFrameTime = EntityManager::avgFrameTime * EntityManager::frameTimeSmoothing +
+                                  deltaTime * (1.0f - EntityManager::frameTimeSmoothing);
+    float animationDeltaTime = std::min(deltaTime, 0.033f);
+
+    // Cleanup TLS animation state periodically
+    auto currentTime = std::chrono::steady_clock::now();
+    static auto lastCleanupTime = std::chrono::steady_clock::now();
+    if (std::chrono::duration_cast<std::chrono::seconds>(currentTime - lastCleanupTime).count() >= 5) {
+        tlsAnimationState.cleanupStaleEntries(currentTime);
+        lastCleanupTime = currentTime;
+    }
+
     int width = (int)Screen.x;
     int height = (int)Screen.y;
-    
-    // Local cache for the rendering phase to minimize lock time
-    static std::vector<EntityData> entitiesCopy; // Static to avoid reallocation
-    static Matrix viewMatrix; // Static to avoid reallocation
-    static Matrix prevViewMatrix; 
-    int localPlayerTeam = 0;
-    auto currentTime = std::chrono::steady_clock::now();
-    bool dataUpdated = false;
-    
-    // COMPLETELY LOCK-FREE DESIGN: Try to get fresh data, but NEVER block if we can't get it
-    // Use the copy we have from the last frame if the lock is contended
-    bool gotFreshData = false;
-    
-    // Check if there's fresh data ready using the atomic flag
-    bool newBufferReady = EntityManager::buffer_ready.exchange(false, std::memory_order_acquire);
-    
-    if (newBufferReady) {
-        // Only try to copy data if it's been marked as ready
-        // This avoids unnecessary lock attempts when there's no new data
-        if (EntityManager::buffer_mutex.try_lock()) {
-            entitiesCopy = EntityManager::renderBuffer->entities;
-            EntityManager::buffer_mutex.unlock();
-            gotFreshData = true;
-        }
+
+    // Lock-free snapshot of current render buffer
+    EntityManager::EntityBuffer* bufferPtr = EntityManager::atomicRenderBuffer.load(std::memory_order_acquire);
+    if (!bufferPtr || bufferPtr->entities.empty()) {
+        return;
     }
-    
-    // Always try to get fresh view matrix, but never block
+    const std::vector<EntityData>& entitiesRef = bufferPtr->entities;
+
+    // View matrix with robust fallback
+    static Matrix lastGoodViewMatrix{};
+    static Matrix lastPrevViewMatrix{};
+    Matrix viewMatrix = Globals::ViewMatrix;
+    Matrix prevViewMatrix = lastPrevViewMatrix;
     if (EntityManager::viewMatrix_mutex.try_lock()) {
         viewMatrix = EntityManager::currentViewMatrix.matrix;
         prevViewMatrix = EntityManager::previousViewMatrix.matrix;
         EntityManager::viewMatrix_mutex.unlock();
+        lastGoodViewMatrix = viewMatrix;
+        lastPrevViewMatrix = prevViewMatrix;
+    } else {
+        viewMatrix = lastGoodViewMatrix;
+        prevViewMatrix = lastPrevViewMatrix;
     }
-    
-    // Extract local player team if available
-    if (!entitiesCopy.empty()) {
-        localPlayerTeam = entitiesCopy[0].team;
+
+    // Local player team
+    int localPlayerTeam = 0;
+    if (!entitiesRef.empty()) {
+        localPlayerTeam = entitiesRef[0].team;
     }
-    
-    // If we have no entities to render, exit early
-    if (entitiesCopy.empty()) {
-        return;
-    }
-    
-    // Track which entities we've drawn for performance metrics
+
     int totalEntities = 0;
     int renderedEntities = 0;
-    
-    // First pass: Process and render entities directly
-    for (const auto& entity : entitiesCopy) {
+    int debugShownCount = 0; // reset every frame
+
+    for (const auto& entity : entitiesRef) {
         totalEntities++;
-        
-        // Skip teammates if team check is enabled
+
+        // Build stable key (prevents duplicate-name flicker)
+        char keyBuf[128];
+        snprintf(keyBuf, sizeof(keyBuf), "%s|%d|%llX|%d", entity.name.c_str(), entity.team, (unsigned long long)entity.id, entity.index);
+        std::string entityKey(keyBuf);
+
+        // Update animation last-seen
+        tlsAnimationState.updateLastSeen(entityKey, currentTime);
+
+        // Team check
         if (config.Visuals.TeamCheck && entity.team == localPlayerTeam)
             continue;
-        
-        // Get entity history for position prediction
-        auto history = EntityManager::entityHistoryCache.get(entity.name);
+
+        // History lookup
+        auto history = EntityManager::entityHistoryCache.get(entityKey);
         bool hasValidHistory = history && history->isValid;
-        
-        // Skip entities without valid history data if we have multiple entities
-        // But be less strict about validation to reduce flickering
-        if (!hasValidHistory && entitiesCopy.size() > 1) {
+        if (!hasValidHistory && entitiesRef.size() > 1) {
             if (!history || history->consecutiveValidPositions < 2) {
                 continue;
             }
         }
-        
-        // Get base positions
+
+        // Base positions
         Vector3 headPos = entity.headPosition;
         Vector3 footPos = entity.footPosition;
-        
-        // Calculate true 3D distance for accurate scaling
-        float distance = 0.0f;
-        {
-            // Use Euclidean distance from origin (camera position)
-            Vector3 diff;
-            diff.x = headPos.x;
-            diff.y = headPos.y; 
-            diff.z = headPos.z;
-            distance = std::sqrt(diff.x * diff.x + diff.y * diff.y + diff.z * diff.z);
-        }
-        
-        // Apply position prediction based on velocity if we have history
+
+        // Distance (for opacity, optional)
+        float distance = std::sqrt(headPos.x * headPos.x + headPos.y * headPos.y + headPos.z * headPos.z);
+
+        // Prediction
         if (hasValidHistory) {
-            // Calculate time since last update for prediction
-            float timeDelta = std::chrono::duration<float>(currentTime - history->lastUpdateTime).count();
-            
-            // Only predict if we have a valid velocity and the time delta isn't too large
-            if (timeDelta > 0 && timeDelta < 0.5f) {
-                // Get time between previous and current update for interpolation purposes
+            float tDelta = std::chrono::duration<float>(currentTime - history->lastUpdateTime).count();
+            if (tDelta > 0 && tDelta < 0.5f) {
                 float updateInterval = std::chrono::duration<float>(history->lastUpdateTime - history->previousUpdateTime).count();
-                if (updateInterval <= 0) updateInterval = EntityManager::avgFrameTime; // Use avg frame time if invalid
-                
-                // For small time deltas, use interpolation between known points
-                if (timeDelta <= updateInterval && history->consecutiveValidPositions >= 2) {
-                    // Get interpolation factor (0 to 1)
-                    float t = timeDelta / updateInterval;
-                    
-                    // Scale velocity for tangent calculation (with stability factor)
-                    float velocityScale = 0.5f * updateInterval * history->stabilityFactor;
-                    Vector3 v0 = history->smoothedVelocity * velocityScale;
-                    Vector3 v1 = history->smoothedVelocity * velocityScale;
-                    
-                    // Use cubic hermite interpolation for smoother curves
-                    headPos = EntityManager::SmoothInterpolate(
-                        history->previousHeadPosition, 
-                        history->lastHeadPosition,
-                        v0, v1, t
-                    );
-                    
-                    footPos = EntityManager::SmoothInterpolate(
-                        history->previousFootPosition, 
-                        history->lastFootPosition,
-                        v0, v1, t
-                    );
-                } 
-                // For larger time deltas, use extrapolation
-                else {
-                    // Advanced prediction using velocity and acceleration with stability weighting
-                    float stabilityFactor = history->stabilityFactor;
-                    
-                    // Scale prediction accuracy by stability and time delta
-                    // Longer predictions get less acceleration influence
-                    float velocityWeight = std::min(1.0f, stabilityFactor * (1.0f - timeDelta * 0.5f));
-                    float accelWeight = std::min(0.3f, stabilityFactor * (1.0f - timeDelta)) * 0.5f;
-                    
-                    // s = s0 + v*t + 0.5*a*t^2
-                    Vector3 velocityOffset = history->smoothedVelocity * timeDelta * velocityWeight;
-                    Vector3 accelOffset = history->acceleration * 0.5f * timeDelta * timeDelta * accelWeight;
-                    
-                    // Apply prediction
-                    headPos = entity.headPosition + velocityOffset + accelOffset;
-                    footPos = entity.footPosition + velocityOffset + accelOffset;
+                if (updateInterval <= 0) updateInterval = EntityManager::avgFrameTime;
+                if (tDelta <= updateInterval && history->consecutiveValidPositions >= 2) {
+                    float t = tDelta / updateInterval;
+                    float vScale = 0.5f * updateInterval * history->stabilityFactor;
+                    Vector3 v0 = history->smoothedVelocity * vScale;
+                    Vector3 v1 = history->smoothedVelocity * vScale;
+                    headPos = EntityManager::SmoothInterpolate(history->previousHeadPosition, history->lastHeadPosition, v0, v1, t);
+                    footPos = EntityManager::SmoothInterpolate(history->previousFootPosition, history->lastFootPosition, v0, v1, t);
+                } else {
+                    float stability = history->stabilityFactor;
+                    float vW = std::min(1.0f, stability * (1.0f - tDelta * 0.5f));
+                    float aW = std::min(0.3f, stability * (1.0f - tDelta)) * 0.5f;
+                    Vector3 vOff = history->smoothedVelocity * tDelta * vW;
+                    Vector3 aOff = history->acceleration * 0.5f * tDelta * tDelta * aW;
+                    headPos = entity.headPosition + vOff + aOff;
+                    footPos = entity.footPosition + vOff + aOff;
                 }
             }
         }
-        
-        // Transform world positions to screen positions
+
+        // Project
         Vector2 headScreenPos, footScreenPos;
         bool headOk = sdk.WorldToScreen(headPos, headScreenPos, viewMatrix, width, height);
         bool footOk = sdk.WorldToScreen(footPos, footScreenPos, viewMatrix, width, height);
-        
-        // If primary projection fails, try with previous view matrix
         if ((!headOk || !footOk) && prevViewMatrix[0][0] != 0) {
             headOk = sdk.WorldToScreen(headPos, headScreenPos, prevViewMatrix, width, height);
             footOk = sdk.WorldToScreen(footPos, footScreenPos, prevViewMatrix, width, height);
         }
-        
-        // Skip if positions can't be projected to screen
-        if (!headOk || !footOk) {
-            continue;
-        }
-        
-        // Validate screen positions are within reasonable bounds
-        // Allow slightly outside screen bounds to avoid pop-in at screen edges
-        const float SCREEN_MARGIN = 0.2f; // 20% margin beyond screen edges
-        if (headScreenPos.x < -width * SCREEN_MARGIN || headScreenPos.x > width * (1 + SCREEN_MARGIN) || 
+        if (!headOk || !footOk) continue;
+
+        // Screen bounds with margin
+        const float SCREEN_MARGIN = 0.2f;
+        if (headScreenPos.x < -width * SCREEN_MARGIN || headScreenPos.x > width * (1 + SCREEN_MARGIN) ||
             headScreenPos.y < -height * SCREEN_MARGIN || headScreenPos.y > height * (1 + SCREEN_MARGIN) ||
-            footScreenPos.x < -width * SCREEN_MARGIN || footScreenPos.x > width * (1 + SCREEN_MARGIN) || 
+            footScreenPos.x < -width * SCREEN_MARGIN || footScreenPos.x > width * (1 + SCREEN_MARGIN) ||
             footScreenPos.y < -height * SCREEN_MARGIN || footScreenPos.y > height * (1 + SCREEN_MARGIN)) {
             continue;
         }
-        
-        // Calculate ESP box dimensions with bounds checking
+
+        // Box
         float box_height = std::max(footScreenPos.y - headScreenPos.y, 1.0f);
-        
-        // Skip unrealistic boxes (too tall or too short)
-        if (box_height < EntityManager::MIN_BOX_HEIGHT || box_height > EntityManager::MAX_BOX_HEIGHT) {
-            continue;
-        }
-        
-        // ---- IMPROVED BOX SIZE CALCULATION BASED ON TRUE 3D DISTANCE AND PLAYER MODEL ----
-        
-        // Calculate proper box width based on player model proportions and distance
-        // Calculate width-to-height ratio with proper distance scaling
-        float baseBoxRatio = 0.42f;  // Base ratio for normal distances (slightly narrower than previous)
-        
-        // Calculate box width from height using a fixed ratio for consistent visuals
-        float box_width = box_height * baseBoxRatio;
-        
-        // Apply minimum width regardless of distance to ensure visibility
-        const float MIN_BOX_WIDTH_PIXELS = 3.0f;
-        box_width = std::max(box_width, MIN_BOX_WIDTH_PIXELS);
-        
-        // Position the box centered at the head position
+        if (box_height < EntityManager::MIN_BOX_HEIGHT || box_height > EntityManager::MAX_BOX_HEIGHT) continue;
+        float box_width = std::max(box_height * 0.42f, 3.0f);
         float box_x = headScreenPos.x - (box_width / 2.0f);
         float box_y = headScreenPos.y;
-        
-        // Apply box size smoothing using thread-local storage
-        auto& lastBoxWidth = tlsAnimationState.lastBoxWidths[entity.name];
-        auto& lastBoxHeight = tlsAnimationState.lastBoxHeights[entity.name];
-        
-        // Initialize box dimensions if first time
-        if (lastBoxWidth <= 0) {
-            lastBoxWidth = box_width;
-            lastBoxHeight = box_height;
-        }
-        
-        // Calculate consistent smoothing factor based on frame rate
-        // We want the same visual smoothness at all distances
+
+        // Box smoothing keyed by stable identity
+        auto& lastBoxWidth = tlsAnimationState.lastBoxWidths[entityKey];
+        auto& lastBoxHeight = tlsAnimationState.lastBoxHeights[entityKey];
+        if (lastBoxWidth <= 0) { lastBoxWidth = box_width; lastBoxHeight = box_height; }
         float stability = hasValidHistory ? history->stabilityFactor : 0.5f;
-        
-        // Fixed smoothing factor that doesn't vary by distance
-        float boxSmoothFactor = std::min(0.25f, animationDeltaTime * 7.5f);
-        
-        // Scale by stability for smoother movement on stable entities
-        boxSmoothFactor *= (0.5f + stability * 0.5f); // Scale by stability (50-100%)
-        
-        // Calculate max allowed change per frame as percentage of current size
-        // This prevents boxes from changing size too rapidly
-        const float MAX_SIZE_CHANGE_RATE = 0.15f; // Max 15% change per frame
+        float boxSmoothFactor = std::min(0.25f, animationDeltaTime * 7.5f) * (0.5f + stability * 0.5f);
+        const float MAX_SIZE_CHANGE_RATE = 0.15f;
         float maxWidthDelta = lastBoxWidth * MAX_SIZE_CHANGE_RATE;
         float maxHeightDelta = lastBoxHeight * MAX_SIZE_CHANGE_RATE;
-        
-        // Clamp changes to avoid flickering
-        float targetWidth = std::min(std::max(
-            box_width,
-            lastBoxWidth - maxWidthDelta),
-            lastBoxWidth + maxWidthDelta
-        );
-        
-        float targetHeight = std::min(std::max(
-            box_height,
-            lastBoxHeight - maxHeightDelta),
-            lastBoxHeight + maxHeightDelta
-        );
-        
-        // Apply smoothing with variable factor based on delta time and distance
+        float targetWidth = std::clamp(box_width, lastBoxWidth - maxWidthDelta, lastBoxWidth + maxWidthDelta);
+        float targetHeight = std::clamp(box_height, lastBoxHeight - maxHeightDelta, lastBoxHeight + maxHeightDelta);
         box_width = lastBoxWidth * (1.0f - boxSmoothFactor) + targetWidth * boxSmoothFactor;
         box_height = lastBoxHeight * (1.0f - boxSmoothFactor) + targetHeight * boxSmoothFactor;
-        
-        // Update stored values for next frame
         lastBoxWidth = box_width;
         lastBoxHeight = box_height;
-        
-        // Recenter the box after smoothing
         box_x = headScreenPos.x - (box_width / 2.0f);
-        
-        // Calculate opacity based on position confidence and distance
+
+        // Opacity
         float opacityBase = hasValidHistory ? std::min(1.0f, history->positionConfidence) : 0.7f;
-        
-        // Fade out very distant players slightly to reduce visual clutter
-        float distanceOpacityFactor = 1.0f;
-        if (distance > 2000.0f) {  // Only apply fade to very distant players
-            distanceOpacityFactor = std::max(0.6f, 1.0f - ((distance - 2000.0f) / 10000.0f));
-        }
-        
+        float distanceOpacityFactor = (distance > 2000.0f) ? std::max(0.6f, 1.0f - ((distance - 2000.0f) / 10000.0f)) : 1.0f;
         float opacity = opacityBase * distanceOpacityFactor;
-        
-        // ---- DIRECTLY RENDER ELEMENTS WITHOUT USING RENDERQUEUE ----
-        
-        // Render ESP box
+
+        // Box draw
         if (config.Visuals.Box) {
-            ImU32 boxColor = IM_COL32(
-                (int)(config.Visuals.BoxColor.x * 255),
-                (int)(config.Visuals.BoxColor.y * 255),
-                (int)(config.Visuals.BoxColor.z * 255),
-                (int)(config.Visuals.BoxColor.w * 255 * opacity)
-            );
-            
-            // Draw box with slightly rounded corners for better appearance
-            drawList->AddRect(
-                ImVec2(box_x, box_y), 
-                ImVec2(box_x + box_width, box_y + box_height), 
-                boxColor, 0.0f, 0, 1.5f  // Use consistent line thickness
-            );
+            ImU32 boxColor = IM_COL32((int)(config.Visuals.BoxColor.x * 255), (int)(config.Visuals.BoxColor.y * 255), (int)(config.Visuals.BoxColor.z * 255), (int)(config.Visuals.BoxColor.w * 255 * opacity));
+            drawList->AddRect(ImVec2(box_x, box_y), ImVec2(box_x + box_width, box_y + box_height), boxColor, 0.0f, 0, 1.5f);
         }
-        
-        // Render health bar
+
+        // Debug visuals (limited count per frame)
+        if (showDebugInfo && hasValidHistory && debugShownCount < 5) {
+            debugShownCount++;
+            Vector3 predictedPos = headPos + history->smoothedVelocity * 0.25f;
+            Vector2 predictedScreenPos;
+            if (sdk.WorldToScreen(predictedPos, predictedScreenPos, viewMatrix, width, height)) {
+                drawList->AddLine(ImVec2(headScreenPos.x, headScreenPos.y), ImVec2(predictedScreenPos.x, predictedScreenPos.y), IM_COL32(255, 0, 255, 180), 2.0f);
+                drawList->AddCircle(ImVec2(predictedScreenPos.x, predictedScreenPos.y), 4.0f, IM_COL32(255, 0, 255, 200), 12, 2.0f);
+            }
+            float velocity = EntityManager::VectorMagnitude(history->smoothedVelocity);
+            char velText[32]; snprintf(velText, sizeof(velText), "%.1f u/s", velocity);
+            drawList->AddText(ImVec2(box_x + box_width + 5, box_y), IM_COL32(255, 255, 0, (int)(255 * opacity)), velText);
+            float stabBarWidth = 30.0f, stabBarHeight = 4.0f, stabBarX = box_x + box_width + 5, stabBarY = box_y + 15;
+            drawList->AddRectFilled(ImVec2(stabBarX, stabBarY), ImVec2(stabBarX + stabBarWidth, stabBarY + stabBarHeight), IM_COL32(80, 80, 80, (int)(150 * opacity)));
+            ImU32 stabColor = IM_COL32((int)((1.0f - history->stabilityFactor) * 255), (int)(history->stabilityFactor * 255), 0, (int)(200 * opacity));
+            drawList->AddRectFilled(ImVec2(stabBarX, stabBarY), ImVec2(stabBarX + stabBarWidth * history->stabilityFactor, stabBarY + stabBarHeight), stabColor);
+        }
+
+        // Health bar
         if (config.Visuals.Health) {
-            float healthPerc = std::min(std::max(entity.health / 100.0f, 0.0f), 1.0f);
+            float healthPerc = std::clamp(entity.health / 100.0f, 0.0f, 1.0f);
             float hb_height = box_height;
             float hb_width = 6.0f;
             float hb_x = box_x - hb_width - 4.0f;
             float hb_y = box_y;
-            
             ImU32 col_top = IM_COL32(0, 255, 0, (int)(255 * opacity));
             ImU32 col_bottom = IM_COL32(255, 0, 0, (int)(255 * opacity));
-            
-            // Smooth health bar animation using thread-local storage
-            float& animPerc = tlsAnimationState.animHealthPerc[entity.name];
-            if (animPerc == 0.0f) animPerc = healthPerc; // Initialize
-            
-            // Calculate animation speed based on deltaTime
-            float healthChangeSpeed = (animPerc > healthPerc) ? 
-                EntityManager::ANIMATION_SPEED_FAST : // Faster for health decrease
-                EntityManager::ANIMATION_SPEED_BASE;  // Normal speed for health increase
-                
+            float& animPerc = tlsAnimationState.animHealthPerc[entityKey];
+            if (animPerc == 0.0f) animPerc = healthPerc;
+            float healthChangeSpeed = (animPerc > healthPerc) ? EntityManager::ANIMATION_SPEED_FAST : EntityManager::ANIMATION_SPEED_BASE;
             float frameAdjustedSpeed = healthChangeSpeed * animationDeltaTime;
-            
-            // Apply smooth transition with frame-rate independent change
-            animPerc += std::min(std::max(healthPerc - animPerc, -frameAdjustedSpeed), frameAdjustedSpeed);
-            
-            // Calculate animated filled height
+            animPerc += std::clamp(healthPerc - animPerc, -frameAdjustedSpeed, frameAdjustedSpeed);
             float anim_filled_height = hb_height * animPerc;
             float anim_empty_height = hb_height - anim_filled_height;
-            
-            // Draw health bar with animation
-            drawList->AddRectFilledMultiColor(
-                ImVec2(hb_x, hb_y + anim_empty_height),
-                ImVec2(hb_x + hb_width, hb_y + hb_height),
-                col_top, col_top, col_bottom, col_bottom
-            );
-            
+            drawList->AddRectFilledMultiColor(ImVec2(hb_x, hb_y + anim_empty_height), ImVec2(hb_x + hb_width, hb_y + hb_height), col_top, col_top, col_bottom, col_bottom);
             if (anim_empty_height > 0.0f) {
                 ImU32 bgColor = IM_COL32(40, 40, 40, (int)(180 * opacity));
-                drawList->AddRectFilled(
-                    ImVec2(hb_x, hb_y),
-                    ImVec2(hb_x + hb_width, hb_y + anim_empty_height),
-                    bgColor
-                );
+                drawList->AddRectFilled(ImVec2(hb_x, hb_y), ImVec2(hb_x + hb_width, hb_y + anim_empty_height), bgColor);
             }
-            
-            drawList->AddRect(
-                ImVec2(hb_x, hb_y), 
-                ImVec2(hb_x + hb_width, hb_y + hb_height), 
-                IM_COL32(0,0,0,(int)(180 * opacity)), 
-                0
-            );
+            drawList->AddRect(ImVec2(hb_x, hb_y), ImVec2(hb_x + hb_width, hb_y + hb_height), IM_COL32(0,0,0,(int)(180 * opacity)), 0);
         }
-        
-        // Render name
+
+        // Name
         float textY = box_y - 4;
         if (config.Visuals.Name) {
-            ImU32 nameColor = IM_COL32(
-                (int)(config.Visuals.NameColor.x * 255),
-                (int)(config.Visuals.NameColor.y * 255),
-                (int)(config.Visuals.NameColor.z * 255),
-                (int)(config.Visuals.NameColor.w * 255 * opacity)
-            );
+            ImU32 nameColor = IM_COL32((int)(config.Visuals.NameColor.x * 255), (int)(config.Visuals.NameColor.y * 255), (int)(config.Visuals.NameColor.z * 255), (int)(config.Visuals.NameColor.w * 255 * opacity));
             ImVec2 textSize = ImGui::CalcTextSize(entity.name.c_str());
             ImVec2 namePos(box_x + (box_width - textSize.x) / 2.0f, textY - textSize.y);
-            
-            // Add slight shadow for better readability
-            drawList->AddText(
-                ImVec2(namePos.x + 1, namePos.y + 1), 
-                IM_COL32(0, 0, 0, (int)(120 * opacity)), 
-                entity.name.c_str()
-            );
-            drawList->AddText(
-                ImVec2(namePos.x, namePos.y), 
-                nameColor, 
-                entity.name.c_str()
-            );
+            drawList->AddText(ImVec2(namePos.x + 1, namePos.y + 1), IM_COL32(0, 0, 0, (int)(120 * opacity)), entity.name.c_str());
+            drawList->AddText(ImVec2(namePos.x, namePos.y), nameColor, entity.name.c_str());
             textY = namePos.y;
         }
-        
-        // Render weapon name
+
+        // Weapon
         if (config.Visuals.Weapon && !entity.weaponName.empty()) {
-            ImU32 weaponColor = IM_COL32(
-                (int)(config.Visuals.WeaponColor.x * 255),
-                (int)(config.Visuals.WeaponColor.y * 255),
-                (int)(config.Visuals.WeaponColor.z * 255),
-                (int)(config.Visuals.WeaponColor.w * 255 * opacity)
-            );
+            ImU32 weaponColor = IM_COL32((int)(config.Visuals.WeaponColor.x * 255), (int)(config.Visuals.WeaponColor.y * 255), (int)(config.Visuals.WeaponColor.z * 255), (int)(config.Visuals.WeaponColor.w * 255 * opacity));
             ImVec2 weaponTextSize = ImGui::CalcTextSize(entity.weaponName.c_str());
             ImVec2 weaponPos(box_x + (box_width - weaponTextSize.x) / 2.0f, box_y + box_height + 2.0f);
-            
-            // Add slight shadow for better readability
-            drawList->AddText(
-                ImVec2(weaponPos.x + 1, weaponPos.y + 1), 
-                IM_COL32(0, 0, 0, (int)(120 * opacity)), 
-                entity.weaponName.c_str()
-            );
-            drawList->AddText(
-                ImVec2(weaponPos.x, weaponPos.y), 
-                weaponColor, 
-                entity.weaponName.c_str()
-            );
+            drawList->AddText(ImVec2(weaponPos.x + 1, weaponPos.y + 1), IM_COL32(0, 0, 0, (int)(120 * opacity)), entity.weaponName.c_str());
+            drawList->AddText(ImVec2(weaponPos.x, weaponPos.y), weaponColor, entity.weaponName.c_str());
         }
-        
+
         renderedEntities++;
     }
-    
+
     auto end = std::chrono::steady_clock::now();
+    float renderTimeMs = std::chrono::duration<float, std::milli>(end - frameStart).count();
+
+    if (showDebugInfo) {
+        int totalPlayers = (int)entitiesRef.size();
+        int livingPlayers = 0;
+        for (const auto& e : entitiesRef) if (e.health > 0) livingPlayers++;
+        char debugText[128];
+        snprintf(debugText, sizeof(debugText), "DEBUG MODE [F9]   Players: %d/%d", livingPlayers, totalPlayers);
+        ImVec2 textSize = ImGui::CalcTextSize(debugText);
+        float padding = 10.0f;
+        drawList->AddRectFilled(ImVec2(width - textSize.x - padding*2, padding), ImVec2(width - padding, padding + textSize.y + padding*2 + 25), IM_COL32(40, 40, 40, 220));
+        drawList->AddRect(ImVec2(width - textSize.x - padding*2, padding), ImVec2(width - padding, padding + textSize.y + padding*2 + 25), IM_COL32(255, 255, 0, 230));
+        drawList->AddText(ImVec2(width - textSize.x - padding + 1, padding + padding/2 + 1), IM_COL32(0, 0, 0, 180), debugText);
+        drawList->AddText(ImVec2(width - textSize.x - padding, padding + padding/2), IM_COL32(255, 255, 0, 255), debugText);
+        char perfText[128];
+        snprintf(perfText, sizeof(perfText), "ESP: %.2fms | Rendered: %d/%d", avgRenderTime, renderedEntities, totalEntities);
+        ImVec2 perfTextSize = ImGui::CalcTextSize(perfText);
+        drawList->AddText(ImVec2(width - perfTextSize.x - padding, padding + textSize.y + padding), IM_COL32(200, 200, 200, 255), perfText);
+    }
+
+    // Metrics
+    avgRenderTime = avgRenderTime * 0.95f + renderTimeMs * 0.05f;
+    maxRenderTime = std::max(maxRenderTime, renderTimeMs);
+    minRenderTime = std::min(minRenderTime, renderTimeMs);
+    frameCounter++;
+    if (std::chrono::duration_cast<std::chrono::seconds>(end - lastFrameMetricOutput).count() >= 1) {
 #ifdef ESP_LOGGING_ENABLED
-    auto renderTime = std::chrono::duration_cast<std::chrono::microseconds>(end - frameStart).count();
-    spdlog::info("ESP::Render: {} us, Entities: {}/{}", renderTime, renderedEntities, totalEntities);
+        spdlog::info("ESP Performance: Avg={:.2f}ms, Min={:.2f}ms, Max={:.2f}ms, Entities: {}/{}", avgRenderTime, minRenderTime, maxRenderTime, renderedEntities, totalEntities);
+#endif
+        lastFrameMetricOutput = end;
+        frameCounter = 0;
+        maxRenderTime = 0.0f;
+        minRenderTime = 9999.0f;
+    }
+#ifdef ESP_LOGGING_ENABLED
+    if (renderTimeMs > 10.0f) {
+        spdlog::warn("ESP::Render: {:.2f} ms, Entities: {}/{}", renderTimeMs, renderedEntities, totalEntities);
+    }
 #endif
 }

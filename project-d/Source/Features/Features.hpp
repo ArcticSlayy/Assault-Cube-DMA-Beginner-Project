@@ -15,6 +15,9 @@ struct EntityData {
     Vector3 footPosition;
     int weaponClass; // Weapon type index
     std::string weaponName; // Weapon name string
+    // New: stable identifiers to disambiguate duplicate names
+    uint64_t id = 0;           // Unique id (e.g., entity address)
+    int index = -1;            // Index in entity list (fallback)
 };
 
 namespace EntityManager {

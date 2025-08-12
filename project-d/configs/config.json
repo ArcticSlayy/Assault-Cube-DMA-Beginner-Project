@@ -13,7 +13,7 @@
         "AimbotKey": 2,
         "AimbotKeyMode": 0,
         "AimbotSmooth": 36.0,
-        "DrawFov": true,
+        "DrawFov": false,
         "Trigger": false,
         "TriggerDelay": 0,
         "TriggerKey": 0,
@@ -65,13 +65,14 @@
         ],
         "TeamCheck": false,
         "VisibleCheck": false,
-        "Watermark": false,
+        "Watermark": true,
         "WatermarkColor": [
-            1.0,
-            1.0,
-            1.0,
+            0.4926714301109314,
+            0.9950739145278931,
+            0.004901818931102753,
             1.0
         ],
+        "WatermarkPos": 1,
         "Weapon": true,
         "WeaponColor": [
             1.0,

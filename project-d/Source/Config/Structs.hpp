@@ -2,6 +2,15 @@
 
 namespace Structs
 {
+    // Watermark position options
+    enum class WatermarkPosition {
+        TopRight = 0,
+        TopLeft = 1, 
+        TopMiddle = 2,
+        BottomLeft = 3,
+        BottomRight = 4
+    };
+
     struct KmboxConfig 
     {
         bool Enabled;
@@ -45,6 +54,7 @@ namespace Structs
 
         bool Watermark;
         ImVec4 WatermarkColor;
+        WatermarkPosition WatermarkPos = WatermarkPosition::TopRight;
 
         bool Name;
         ImVec4 NameColor;

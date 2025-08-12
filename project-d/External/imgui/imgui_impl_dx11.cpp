@@ -132,7 +132,7 @@ void ImGui_ImplDX11_RenderDrawData(ImDrawData* draw_data)
     if (!bd->pVB || bd->VertexBufferSize < draw_data->TotalVtxCount)
     {
         if (bd->pVB) { bd->pVB->Release(); bd->pVB = nullptr; }
-        bd->VertexBufferSize = draw_data->TotalVtxCount + 5000;
+        bd->VertexBufferSize = draw_data->TotalVtxCount + 10000; // Increased buffer size for safety
         D3D11_BUFFER_DESC desc;
         memset(&desc, 0, sizeof(D3D11_BUFFER_DESC));
         desc.Usage = D3D11_USAGE_DYNAMIC;
@@ -146,7 +146,7 @@ void ImGui_ImplDX11_RenderDrawData(ImDrawData* draw_data)
     if (!bd->pIB || bd->IndexBufferSize < draw_data->TotalIdxCount)
     {
         if (bd->pIB) { bd->pIB->Release(); bd->pIB = nullptr; }
-        bd->IndexBufferSize = draw_data->TotalIdxCount + 10000;
+        bd->IndexBufferSize = draw_data->TotalIdxCount + 20000; // Increased buffer size for safety
         D3D11_BUFFER_DESC desc;
         memset(&desc, 0, sizeof(D3D11_BUFFER_DESC));
         desc.Usage = D3D11_USAGE_DYNAMIC;

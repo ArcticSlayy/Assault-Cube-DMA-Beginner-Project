@@ -444,9 +444,6 @@
     <ClInclude Include="Source\Kmbox\HidTable.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Features\ESP\EntityManager.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Source\Kmbox\Manager.cpp">

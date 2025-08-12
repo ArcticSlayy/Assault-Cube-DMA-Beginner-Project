@@ -365,6 +365,81 @@ void Overlay::EndRender()
         ImVec4 color = config.Aim.AimbotFovColor;
         drawList->AddCircle(center, radius, ImGui::GetColorU32(color), 0, 2.0f);
     }
+    
+    // Add watermark if enabled
+    if (config.Visuals.Watermark)
+    {
+        // Get FPS for watermark
+        float fps = ImGui::GetIO().Framerate;
+        
+        ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+        ImVec4 watermarkColor = config.Visuals.WatermarkColor;
+        ImU32 textColor = ImGui::GetColorU32(watermarkColor);
+        
+        // Calculate string dimensions
+        char watermarkText[128];
+        snprintf(watermarkText, sizeof(watermarkText), "%.1f FPS | Made by ", fps);
+        
+        ImVec2 textSize = ImGui::CalcTextSize(watermarkText);
+        ImVec2 arcticSize = ImGui::CalcTextSize("Arctic");
+        float fullWidth = textSize.x + arcticSize.x;
+        
+        // Calculate position based on setting
+        float padding = 10.0f;
+        float posX = 0.0f;
+        float posY = 0.0f;
+        
+        switch (config.Visuals.WatermarkPos)
+        {
+            case Structs::WatermarkPosition::TopLeft:
+                posX = padding;
+                posY = padding;
+                break;
+                
+            case Structs::WatermarkPosition::TopMiddle:
+                posX = (Screen.x - fullWidth) / 2.0f;
+                posY = padding;
+                break;
+                
+            case Structs::WatermarkPosition::BottomLeft:
+                posX = padding;
+                posY = Screen.y - textSize.y - padding;
+                break;
+                
+            case Structs::WatermarkPosition::BottomRight:
+                posX = Screen.x - fullWidth - padding;
+                posY = Screen.y - textSize.y - padding;
+                break;
+                
+            case Structs::WatermarkPosition::TopRight:
+            default:
+                posX = Screen.x - fullWidth - padding;
+                posY = padding;
+                break;
+        }
+        
+        // Draw shadow for better visibility against any background
+        drawList->AddText(ImVec2(posX + 1, posY + 1), IM_COL32(0, 0, 0, 180), watermarkText);
+        
+        // Draw normal text part
+        drawList->AddText(ImVec2(posX, posY), textColor, watermarkText);
+        
+        // Draw "Arctic" in bold (simulated by drawing it multiple times with slight offsets)
+        // First draw the bold Arctic text with shadow
+        drawList->AddText(ImVec2(posX + textSize.x + 1, posY + 1), IM_COL32(0, 0, 0, 180), "Arctic");
+        
+        // Create bold effect by drawing the text multiple times with slight offsets
+        for (float dx = -0.5f; dx <= 0.5f; dx += 0.5f) {
+            for (float dy = -0.5f; dy <= 0.5f; dy += 0.5f) {
+                if (dx != 0 || dy != 0) {
+                    drawList->AddText(ImVec2(posX + textSize.x + dx, posY + dy), textColor, "Arctic");
+                }
+            }
+        }
+        
+        // Draw main "Arctic" text on top
+        drawList->AddText(ImVec2(posX + textSize.x, posY), textColor, "Arctic");
+    }
 
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 
@@ -533,12 +608,18 @@ void Overlay::RenderMenu()
     float rounding = 16.0f;
     ImU32 titleLeft = ImGui::ColorConvertFloat4ToU32(ImVec4(0.13f, 0.15f, 0.18f, 1.0f));
     ImU32 titleRight = ImGui::ColorConvertFloat4ToU32(ImVec4(0.09f, 0.10f, 0.12f, 1.0f));
+
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    // Ensure drawing is not clipped by the window's inner padding: clip to full window rect
+    dl->PushClipRect(winPos, winPos + winSize, false);
     // Fill full width, no rounding
-    ImGui::GetWindowDrawList()->AddRectFilledMultiColor(winPos, winPos + ImVec2(winSize.x, titleBarHeight), titleLeft, titleRight, titleRight, titleLeft);
+    dl->AddRectFilledMultiColor(winPos, winPos + ImVec2(winSize.x, titleBarHeight), titleLeft, titleRight, titleRight, titleLeft);
     // Overlay rounded corners only at top
-    ImGui::GetWindowDrawList()->AddRect(winPos, winPos + ImVec2(winSize.x, titleBarHeight), titleLeft, rounding, ImDrawFlags_RoundCornersTop, 2.0f);
+    dl->AddRect(winPos, winPos + ImVec2(winSize.x, titleBarHeight), titleLeft, rounding, ImDrawFlags_RoundCornersTop, 2.0f);
     // Subtle shadow under title bar
-    ImGui::GetWindowDrawList()->AddRectFilled(winPos + ImVec2(0, titleBarHeight - 2), winPos + ImVec2(winSize.x, titleBarHeight + 8), ImGui::ColorConvertFloat4ToU32(ImVec4(0,0,0,0.18f)));
+    dl->AddRectFilled(winPos + ImVec2(0, titleBarHeight - 2), winPos + ImVec2(winSize.x, titleBarHeight + 8), ImGui::ColorConvertFloat4ToU32(ImVec4(0,0,0,0.18f)));
+    dl->PopClipRect();
+
     // Center icon and text horizontally and vertically
     const char* titleText = "Aetherial";
     ImVec2 textDim = ImGui::CalcTextSize(titleText);
@@ -706,8 +787,16 @@ void Overlay::RenderMenu()
                     ImAdd::SeparatorText("General");
                     ImGui::BeginGroup();
                     ToggleSwitch("Watermark", &config.Visuals.Watermark);
-                    if (config.Visuals.Watermark)
+                    if (config.Visuals.Watermark) {
                         ImAdd::ColorEdit4("Watermark Color", (float*)&config.Visuals.WatermarkColor);
+                        
+                        // Add position selector
+                        const char* positions[] = { "Top Right", "Top Left", "Top Middle", "Bottom Left", "Bottom Right" };
+                        int currentPos = static_cast<int>(config.Visuals.WatermarkPos);
+                        if (ImGui::Combo("Position", &currentPos, positions, IM_ARRAYSIZE(positions))) {
+                            config.Visuals.WatermarkPos = static_cast<Structs::WatermarkPosition>(currentPos);
+                        }
+                    }
                     ToggleSwitch("Background", &config.Visuals.Background);
                     ImGui::EndGroup();
                     ImAdd::SeparatorText("Visual");
