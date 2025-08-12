@@ -708,6 +708,43 @@ namespace EntityManager {
     void StartEntityUpdateThread() {
         static std::thread updateThread;
         
+        // Print local player address for debugging
+        auto scatterGlobals = mem.CreateScatterHandle();
+        if (scatterGlobals) {
+            uint32_t dwLocalPlayer = 0;
+            mem.AddScatterReadRequest(scatterGlobals, Globals::ClientBase + p_game->local_player, &dwLocalPlayer, sizeof(dwLocalPlayer));
+            mem.ExecuteReadScatter(scatterGlobals);
+            mem.CloseScatterHandle(scatterGlobals);
+            
+            if (dwLocalPlayer) {
+                spdlog::info("==== LOCAL PLAYER ADDRESS: 0x{:X} ====", dwLocalPlayer);
+                
+                // Optional: Print additional information about the local player
+                uint32_t health = 0;
+                uint32_t team = 0;
+                Vector3 position;
+                char nameBuf[64] = {0};
+                
+                auto scatterDetails = mem.CreateScatterHandle();
+                if (scatterDetails) {
+                    mem.AddScatterReadRequest(scatterDetails, dwLocalPlayer + p_entity->i_health, &health, sizeof(health));
+                    mem.AddScatterReadRequest(scatterDetails, dwLocalPlayer + p_entity->i_team, &team, sizeof(team));
+                    mem.AddScatterReadRequest(scatterDetails, dwLocalPlayer + p_entity->v3_foot_pos, &position, sizeof(position));
+                    mem.AddScatterReadRequest(scatterDetails, dwLocalPlayer + p_entity->str_name, nameBuf, sizeof(nameBuf));
+                    mem.ExecuteReadScatter(scatterDetails);
+                    mem.CloseScatterHandle(scatterDetails);
+                    
+                    spdlog::info("Local Player Info:");
+                    spdlog::info(" - Name: {}", nameBuf);
+                    spdlog::info(" - Health: {}", health);
+                    spdlog::info(" - Team: {}", team);
+                    spdlog::info(" - Position: [{:.2f}, {:.2f}, {:.2f}]", position.x, position.y, position.z);
+                }
+            } else {
+                spdlog::warn("Local player address not found during initialization");
+            }
+        }
+        
         // Only start if not already running
         if (!update_thread_active.load(std::memory_order_acquire)) {
             // Make sure any old thread is properly joined
