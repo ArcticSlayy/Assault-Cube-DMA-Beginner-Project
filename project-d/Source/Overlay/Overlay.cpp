@@ -532,6 +532,16 @@ void Overlay::StyleMenu(ImGuiIO& IO, ImGuiStyle& style)
     style.Colors[ImGuiCol_NavHighlight]       = blueAccent;
     style.Colors[ImGuiCol_ScrollbarGrabHovered] = blueAccent;
     style.Colors[ImGuiCol_ScrollbarGrabActive]  = blueAccent;
+
+    // Enforce minimum brightness (RGB >= 25/255)
+    const float minC = 25.0f / 255.0f;
+    for (int i = 0; i < ImGuiCol_COUNT; ++i) {
+        ImVec4 c = style.Colors[i];
+        c.x = (i == ImGuiCol_Text || i == ImGuiCol_TextDisabled) ? c.x : ImMax(c.x, minC);
+        c.y = (i == ImGuiCol_Text || i == ImGuiCol_TextDisabled) ? c.y : ImMax(c.y, minC);
+        c.z = (i == ImGuiCol_Text || i == ImGuiCol_TextDisabled) ? c.z : ImMax(c.z, minC);
+        style.Colors[i] = c;
+    }
 }
 
 bool ToggleSwitch(const char* label, bool* v, float scale = 0.55f)
@@ -565,6 +575,19 @@ void Overlay::RenderMenu()
     ImGuiIO& io = ImGui::GetIO();
     StyleMenu(io, style);
     float OverlayFps = ImGui::GetIO().Framerate;
+
+    // Toast system (simple)
+    struct Toast { std::string text; std::chrono::steady_clock::time_point expiry; };
+    static std::vector<Toast> toasts;
+    auto pushToast = [&](const std::string& msg, float seconds = 2.0f) {
+        toasts.push_back({ msg, std::chrono::steady_clock::now() + std::chrono::milliseconds((int)(seconds * 1000)) });
+    };
+
+    // FPS history for sparkline
+    static std::vector<float> fpsHistory(120, 0.0f);
+    static int fpsIndex = 0;
+    fpsHistory[fpsIndex] = OverlayFps;
+    fpsIndex = ( fpsIndex + 1 ) % ( int )fpsHistory.size( );
 
 #ifdef SHOW_ICON_FONT_VIEWER
     // --- Icon Font Debug Viewer ---
@@ -606,27 +629,56 @@ void Overlay::RenderMenu()
     float paddingY = 5.0f; // 5px above and below text
     float titleBarHeight = ImMax(textSize, iconSize) + 2 * paddingY;
     float rounding = 16.0f;
-    ImU32 titleLeft = ImGui::ColorConvertFloat4ToU32(ImVec4(0.13f, 0.15f, 0.18f, 1.0f));
-    ImU32 titleRight = ImGui::ColorConvertFloat4ToU32(ImVec4(0.09f, 0.10f, 0.12f, 1.0f));
+    // Increased contrast but enforce min brightness of RGB(25,25,25)
+    const float kMin = 25.0f / 255.0f;
+    ImVec4 leftCol = ImVec4(0.20f, 0.22f, 0.26f, 1.0f); // a bit brighter left
+    ImVec4 rightCol = ImVec4(0.10f, 0.10f, 0.12f, 1.0f); // clamp >= 25/255
+    leftCol.x = ImMax(leftCol.x, kMin); leftCol.y = ImMax(leftCol.y, kMin); leftCol.z = ImMax(leftCol.z, kMin);
+    rightCol.x = ImMax(rightCol.x, kMin); rightCol.y = ImMax(rightCol.y, kMin); rightCol.z = ImMax(rightCol.z, kMin);
+    ImU32 titleLeft = ImGui::ColorConvertFloat4ToU32(leftCol);
+    ImU32 titleRight = ImGui::ColorConvertFloat4ToU32(rightCol);
 
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    // Ensure drawing is not clipped by the window's inner padding: clip to full window rect
+    // Draw background gradient full-width
     dl->PushClipRect(winPos, winPos + winSize, false);
-    // Fill full width, no rounding
     dl->AddRectFilledMultiColor(winPos, winPos + ImVec2(winSize.x, titleBarHeight), titleLeft, titleRight, titleRight, titleLeft);
-    // Overlay rounded corners only at top
     dl->AddRect(winPos, winPos + ImVec2(winSize.x, titleBarHeight), titleLeft, rounding, ImDrawFlags_RoundCornersTop, 2.0f);
-    // Subtle shadow under title bar
-    dl->AddRectFilled(winPos + ImVec2(0, titleBarHeight - 2), winPos + ImVec2(winSize.x, titleBarHeight + 8), ImGui::ColorConvertFloat4ToU32(ImVec4(0,0,0,0.18f)));
+    dl->AddRectFilled(winPos + ImVec2(0, titleBarHeight - 2), winPos + ImVec2(winSize.x, titleBarHeight + 8), ImGui::ColorConvertFloat4ToU32(ImVec4(0,0,0,0.22f)));
+
+    // Animated accent underline across title bar
+    {
+        float underlineY = winPos.y + titleBarHeight - 3.0f;
+        float underlineH = 2.0f;
+        // Base subtle line
+        dl->AddRectFilled(ImVec2(winPos.x, underlineY), ImVec2(winPos.x + winSize.x, underlineY + underlineH), ImGui::GetColorU32(ImVec4(0.20f, 0.22f, 0.26f, 1.0f)));
+        // Moving highlight segment
+        float t = (float)ImGui::GetTime();
+        float segW = 140.0f;
+        float speed = 120.0f; // px/sec
+        float x = fmodf(t * speed, winSize.x + segW) - segW;
+        ImVec2 a = ImVec2(winPos.x + x, underlineY);
+        ImVec2 b = ImVec2(winPos.x + x + segW, underlineY + underlineH);
+        dl->AddRectFilled(a, b, ImGui::GetColorU32(ImVec4(0.22f, 0.40f, 0.90f, 0.85f)));
+    }
+
     dl->PopClipRect();
 
-    // Center icon and text horizontally and vertically
+    // Window drag via title bar (avoid when hovering items)
+    ImRect titleBarRect(winPos, winPos + ImVec2(winSize.x, titleBarHeight));
+    if (ImGui::IsMouseHoveringRect(titleBarRect.Min, titleBarRect.Max) && !ImGui::IsAnyItemHovered() && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+        ImGui::SetWindowPos(ImGui::GetWindowPos() + io.MouseDelta);
+    }
+
+    // Ensure all title content is not clipped by inner padding
+    dl->PushClipRect(winPos, winPos + ImVec2(winSize.x, titleBarHeight), false);
+
+    // Title text + left icon
     const char* titleText = "Aetherial";
     ImVec2 textDim = ImGui::CalcTextSize(titleText);
     float totalWidth = iconSize + 18.0f + textDim.x;
     float centerX = (winSize.x - totalWidth) * 0.5f;
     float centerY = paddingY + (titleBarHeight - 2 * paddingY - ImMax(iconSize, textSize)) / 2.0f;
-    float iconYOffset = 4.2f; // Adjust this value as needed (try 2.0f - 6.0f)
+    float iconYOffset = 4.2f;
     float iconY = centerY + (ImMax(iconSize, textSize) - iconSize) / 2.0f + iconYOffset;
     float textY = centerY + (ImMax(iconSize, textSize) - textSize) / 2.0f;
     float startX = centerX;
@@ -639,6 +691,53 @@ void Overlay::RenderMenu()
     ImGui::PushFont(titleFont);
     ImGui::TextColored(ImVec4(0.95f, 0.96f, 0.98f, 1.00f), "%s", titleText);
     ImGui::PopFont();
+
+    // Title bar buttons (right): settings and close
+    float btnSize = 26.0f;
+    float btnPadding = 8.0f;
+    ImVec2 btnPosClose = winPos + ImVec2(winSize.x - btnPadding - btnSize, (titleBarHeight - btnSize) * 0.5f);
+    ImVec2 btnPosSettings = btnPosClose - ImVec2(btnSize + 6.0f, 0);
+
+    auto drawTitleButton = [&](const ImVec2& pos, const char* icon, ImU32 fg) -> bool {
+        ImGui::SetCursorScreenPos(pos);
+        ImGui::InvisibleButton(icon, ImVec2(btnSize, btnSize));
+        bool hovered = ImGui::IsItemHovered();
+        ImU32 bgCol = hovered ? ImGui::GetColorU32(ImVec4(0.22f, 0.40f, 0.80f, 0.25f)) : ImGui::GetColorU32(ImVec4(0,0,0,0));
+        dl->AddRectFilled(pos, pos + ImVec2(btnSize, btnSize), bgCol, 6.0f);
+        ImVec2 iconPos = pos + ImVec2((btnSize - (iconFont ? iconFont->FontSize : 18.0f)) * 0.5f, (btnSize - (iconFont ? iconFont->FontSize : 18.0f)) * 0.5f);
+        ImGui::PushFont(iconFont);
+        dl->AddText(iconFont, iconFont ? iconFont->FontSize : 18.0f, iconPos, fg, icon);
+        ImGui::PopFont();
+        return ImGui::IsItemClicked();
+    };
+
+    bool settingsClicked = drawTitleButton(btnPosSettings, ICON_FA_COG, ImGui::GetColorU32(ImVec4(0.9f,0.9f,0.95f,1.0f)));
+    if (settingsClicked) {
+        ImGui::OpenPopup("##settings_popup");
+    }
+
+    if (ImGui::BeginPopup("##settings_popup")) {
+        ImGui::Text("Settings");
+        ImGui::Separator();
+        ImGui::Checkbox("VSync", &config.Visuals.VSync);
+        ImGui::Checkbox("Black Background", &config.Visuals.Background);
+        ImGui::EndPopup();
+    }
+
+#ifdef ICON_FA_TIMES
+    const char* closeIcon = ICON_FA_TIMES;
+#else
+    const char* closeIcon = "X";
+#endif
+    bool closeClicked = drawTitleButton(btnPosClose, closeIcon, ImGui::GetColorU32(ImVec4(0.95f,0.35f,0.35f,1.0f)));
+    if (closeClicked) {
+        Globals::Running = false;
+        shouldRun = false;
+        ExitProcess(0);
+    }
+
+    dl->PopClipRect();
+
     ImGui::Dummy(ImVec2(0, titleBarHeight - ImMax(iconSize, textSize)));
 
     // --- Sidebar ---
@@ -649,44 +748,40 @@ void Overlay::RenderMenu()
         ICON_FA_INFO_CIRCLE // Info
     };
     float footerHeight = 32.0f;
-    float sidebarWidth = 220.0f; // Make sidebar wider for icons/text
+    float sidebarWidth = 220.0f;
     float sidebarHeight = winSize.y - titleBarHeight - footerHeight;
     ImGui::BeginChild("Sidebar", ImVec2(sidebarWidth, sidebarHeight), false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     {
-        ImGui::SetScrollY(0); // Force scroll position to top
+        ImGui::SetScrollY(0);
         ImGui::PushFont(iconFont);
         float tabSpacing = 4.0f;
         float tabHeight = ImMin((sidebarHeight - ((m_Tabs.size() - 1) * tabSpacing)) / m_Tabs.size(), 40.0f);
         float iconTextSpacing = 16.0f;
         float tabPadding = 22.0f;
-        float tabWidth = sidebarWidth; // Tabs fill sidebar
+        float tabWidth = sidebarWidth;
+        static float animPillY = 0.0f; // animated selection marker Y
         for (int i = 0; i < m_Tabs.size(); i++) {
             ImGui::PushID(i);
             bool selected = (m_iSelectedPage == i);
             ImVec2 itemSize(tabWidth, tabHeight);
             ImVec2 itemPos = ImGui::GetCursorScreenPos();
             if (selected) {
-                // Gradient only for active tab, fit child width
+                // Animated selection pill at left side
+                float targetY = itemPos.y + 6.0f;
+                if (animPillY == 0.0f) animPillY = targetY;
+                animPillY = animPillY + (targetY - animPillY) * 0.15f; // smooth
+                ImVec2 pillA = ImVec2(itemPos.x + 6.0f, animPillY);
+                ImVec2 pillB = ImVec2(itemPos.x + 10.0f, animPillY + tabHeight - 12.0f);
+                ImGui::GetWindowDrawList()->AddRectFilled(pillA, pillB, ImGui::GetColorU32(blueAccent), 4.0f);
+
+                // Selected background
                 ImU32 tabLeft = ImGui::ColorConvertFloat4ToU32(ImVec4(0.22f, 0.40f, 0.80f, 0.45f));
                 ImU32 tabRight = ImGui::ColorConvertFloat4ToU32(ImVec4(0.22f, 0.40f, 0.80f, 0.18f));
-                ImGui::GetWindowDrawList()->AddRectFilledMultiColor(
-                    itemPos,
-                    itemPos + ImVec2(tabWidth, tabHeight),
-                    tabLeft, tabRight, tabRight, tabLeft
-                );
-                ImGui::GetWindowDrawList()->AddRectFilled(
-                    itemPos, itemPos + ImVec2(tabWidth, tabHeight),
-                    ImGui::ColorConvertFloat4ToU32(ImVec4(0.22f, 0.40f, 0.80f, 0.25f)), 8.0f
-                );
-                // Blue accent border for active tab
-                ImGui::GetWindowDrawList()->AddRect(
-                    itemPos, itemPos + ImVec2(tabWidth, tabHeight),
-                    ImGui::ColorConvertFloat4ToU32(ImVec4(0.22f, 0.40f, 0.80f, 0.85f)), 8.0f, 0, 2.0f
-                );
+                ImGui::GetWindowDrawList()->AddRectFilledMultiColor(itemPos, itemPos + ImVec2(tabWidth, tabHeight), tabLeft, tabRight, tabRight, tabLeft);
+                ImGui::GetWindowDrawList()->AddRect(itemPos, itemPos + ImVec2(tabWidth, tabHeight), ImGui::GetColorU32(ImVec4(0.22f, 0.40f, 0.80f, 0.85f)), 8.0f, 0, 2.0f);
             }
             float startX = itemPos.x + tabPadding;
-            // Adjust iconY to align icon with text more closely
-            float iconY = itemPos.y + (tabHeight - (iconFont ? iconFont->FontSize : 21.5f)) / 2 + 2.0f; // +2.0f for better vertical alignment
+            float iconY = itemPos.y + (tabHeight - (iconFont ? iconFont->FontSize : 21.5f)) / 2 + 2.0f;
             float textY = itemPos.y + (tabHeight - (tabFont ? tabFont->FontSize : 16.5f)) / 2;
             float textX = startX + (iconFont ? iconFont->FontSize : 21.5f) + iconTextSpacing;
             ImGui::SetCursorScreenPos(ImVec2(startX, iconY));
@@ -710,21 +805,24 @@ void Overlay::RenderMenu()
     ImGui::SameLine();
 
     // --- Main Content ---
-    ImGui::BeginChild("MainContent", ImVec2(0, sidebarHeight), true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    // Remove extra outer rounded rectangle: no bordered MainContent, only panel per tab
+    ImGui::BeginChild("MainContent", ImVec2(0, sidebarHeight), false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     {
-        float fGroupWidth = (ImGui::GetWindowWidth() - style.WindowPadding.x * 2 - style.ItemSpacing.x * 8) / 2.0f + 60.0f;
         ImGui::PushFont(featureFont);
+
+        // One panel per tab (no extra outer border). Only inner sections get borders.
         if (m_iSelectedPage == 0) // Aim
         {
+            // Section header (no container border here)
+            ImAdd::SeparatorText("Aim");
+
             ImGui::Columns(2, nullptr, false);
             float yStart = ImGui::GetCursorPosY();
+
             // Left: Aimbot
             ImGui::SetCursorPosY(yStart);
-            ImGui::BeginChild("AimbotSection", ImVec2(0, 340), ImGuiChildFlags_Border, ImGuiWindowFlags_MenuBar);
-            if (ImGui::BeginMenuBar()) {
-                ImGui::TextColored(ImVec4(0.85f, 0.86f, 0.88f, 1.0f), "Aimbot");
-                ImGui::EndMenuBar();
-            }
+            ImGui::BeginChild("AimbotSection", ImVec2(0, 0), ImGuiChildFlags_Border, ImGuiWindowFlags_MenuBar);
+            if (ImGui::BeginMenuBar()) { ImGui::TextColored(ImVec4(0.85f, 0.86f, 0.88f, 1.0f), "Aimbot"); ImGui::EndMenuBar(); }
             {
                 ToggleSwitch("Enable", &config.Aim.Aimbot);
                 if (config.Aim.Aimbot)
@@ -746,14 +844,13 @@ void Overlay::RenderMenu()
                 }
             }
             ImGui::EndChild();
+
             ImGui::NextColumn();
+
             // Right: Triggerbot
-            ImGui::SetCursorPosY(yStart); // Use the same yStart as left column
-            ImGui::BeginChild("TriggerbotSection", ImVec2(0, 340), ImGuiChildFlags_Border, ImGuiWindowFlags_MenuBar);
-            if (ImGui::BeginMenuBar()) {
-                ImGui::TextColored(ImVec4(0.85f, 0.86f, 0.88f, 1.0f), "Triggerbot");
-                ImGui::EndMenuBar();
-            }
+            ImGui::SetCursorPosY(yStart);
+            ImGui::BeginChild("TriggerbotSection", ImVec2(0, 0), ImGuiChildFlags_Border, ImGuiWindowFlags_MenuBar);
+            if (ImGui::BeginMenuBar()) { ImGui::TextColored(ImVec4(0.85f, 0.86f, 0.88f, 1.0f), "Triggerbot"); ImGui::EndMenuBar(); }
             {
                 ToggleSwitch("Enable", &config.Aim.Trigger);
                 if (config.Aim.Trigger)
@@ -775,271 +872,149 @@ void Overlay::RenderMenu()
         }
         else if (m_iSelectedPage == 1) // Visuals
         {
-            ImGui::BeginChild("Visuals", ImVec2(0, 0), ImGuiChildFlags_Border, ImGuiWindowFlags_MenuBar);
-            if (ImGui::BeginMenuBar()) {
-                ImGui::TextColored(ImVec4(0.85f, 0.86f, 0.88f, 1.0f), "Visuals");
-                ImGui::EndMenuBar();
-            }
+            ImAdd::SeparatorText("Visuals");
+            ToggleSwitch("Enable", &config.Visuals.Enabled);
+            if (config.Visuals.Enabled)
             {
-                ToggleSwitch("Enable", &config.Visuals.Enabled);
-                if (config.Visuals.Enabled)
-                {
-                    ImAdd::SeparatorText("General");
-                    ImGui::BeginGroup();
-                    ToggleSwitch("Watermark", &config.Visuals.Watermark);
-                    if (config.Visuals.Watermark) {
-                        ImAdd::ColorEdit4("Watermark Color", (float*)&config.Visuals.WatermarkColor);
-                        
-                        // Add position selector
-                        const char* positions[] = { "Top Right", "Top Left", "Top Middle", "Bottom Left", "Bottom Right" };
-                        int currentPos = static_cast<int>(config.Visuals.WatermarkPos);
-                        if (ImGui::Combo("Position", &currentPos, positions, IM_ARRAYSIZE(positions))) {
-                            config.Visuals.WatermarkPos = static_cast<Structs::WatermarkPosition>(currentPos);
-                        }
+                ImAdd::SeparatorText("General");
+                ImGui::BeginGroup();
+                ToggleSwitch("Watermark", &config.Visuals.Watermark);
+                if (config.Visuals.Watermark) {
+                    ImAdd::ColorEdit4("Watermark Color", (float*)&config.Visuals.WatermarkColor);
+                    const char* positions[] = { "Top Right", "Top Left", "Top Middle", "Bottom Left", "Bottom Right" };
+                    int currentPos = static_cast<int>(config.Visuals.WatermarkPos);
+                    if (ImGui::Combo("Position", &currentPos, positions, IM_ARRAYSIZE(positions))) {
+                        config.Visuals.WatermarkPos = static_cast<Structs::WatermarkPosition>(currentPos);
                     }
-                    ToggleSwitch("Background", &config.Visuals.Background);
-                    ImGui::EndGroup();
-                    ImAdd::SeparatorText("Visual");
-                    ImGui::BeginGroup();
-                    ToggleSwitch("VSync", &config.Visuals.VSync);
-                    ToggleSwitch("Team Check", &config.Visuals.TeamCheck);
-                    ToggleSwitch("Visible Check", &config.Visuals.VisibleCheck);
-                    ToggleSwitch("Hitmarker", &config.Visuals.Hitmarker);
-                    if (config.Visuals.Hitmarker)
-                        ImAdd::ColorEdit4("Hitmarker Color", (float*)&config.Visuals.HitmarkerColor);
-                    ImGui::EndGroup();
-                    ImAdd::SeparatorText("Players");
-                    ImGui::BeginGroup();
-                    ToggleSwitch("Name", &config.Visuals.Name);
-                    if (config.Visuals.Name)
-                        ImAdd::ColorEdit4("Name Color", (float*)&config.Visuals.NameColor);
-                    ToggleSwitch("Health", &config.Visuals.Health);
-                    ToggleSwitch("Box", &config.Visuals.Box);
-                    if (config.Visuals.Box)
-                    {
-                        ImAdd::ColorEdit4("Box Color", (float*)&config.Visuals.BoxColor);
-                        ImAdd::ColorEdit4("Box Color Visible", (float*)&config.Visuals.BoxColorVisible);
-                    }
-                    ToggleSwitch("Weapon", &config.Visuals.Weapon);
-                    if (config.Visuals.Weapon)
-                        ImAdd::ColorEdit4("Weapon Color", (float*)&config.Visuals.WeaponColor);
-                    ToggleSwitch("Bones", &config.Visuals.Bones);
-                    if (config.Visuals.Bones)
-                        ImAdd::ColorEdit4("Bones Color", (float*)&config.Visuals.BonesColor);
-                    ImGui::EndGroup();
                 }
+                ToggleSwitch("Background", &config.Visuals.Background);
+                ImGui::EndGroup();
+
+                ImAdd::SeparatorText("Visual");
+                ImGui::BeginGroup();
+                ToggleSwitch("VSync", &config.Visuals.VSync);
+                ToggleSwitch("Team Check", &config.Visuals.TeamCheck);
+                ToggleSwitch("Visible Check", &config.Visuals.VisibleCheck);
+                ToggleSwitch("Hitmarker", &config.Visuals.Hitmarker);
+                if (config.Visuals.Hitmarker)
+                    ImAdd::ColorEdit4("Hitmarker Color", (float*)&config.Visuals.HitmarkerColor);
+                ImGui::EndGroup();
+
+                ImAdd::SeparatorText("Players");
+                ImGui::BeginGroup();
+                ToggleSwitch("Name", &config.Visuals.Name);
+                if (config.Visuals.Name)
+                    ImAdd::ColorEdit4("Name Color", (float*)&config.Visuals.NameColor);
+                ToggleSwitch("Health", &config.Visuals.Health);
+                ToggleSwitch("Box", &config.Visuals.Box);
+                if (config.Visuals.Box)
+                {
+                    ImAdd::ColorEdit4("Box Color", (float*)&config.Visuals.BoxColor);
+                    ImAdd::ColorEdit4("Box Color Visible", (float*)&config.Visuals.BoxColorVisible);
+                }
+                ToggleSwitch("Weapon", &config.Visuals.Weapon);
+                if (config.Visuals.Weapon)
+                    ImAdd::ColorEdit4("Weapon Color", (float*)&config.Visuals.WeaponColor);
+                ToggleSwitch("Bones", &config.Visuals.Bones);
+                if (config.Visuals.Bones)
+                    ImAdd::ColorEdit4("Bones Color", (float*)&config.Visuals.BonesColor);
+                ImGui::EndGroup();
             }
-            ImGui::EndChild();
         }
         else if (m_iSelectedPage == 2) // Config
         {
-            ImGui::BeginChild("Configs", ImVec2(0, 0), ImGuiChildFlags_Border, ImGuiWindowFlags_MenuBar);
+            ImAdd::SeparatorText("Configs");
+            // Render actual config controls (moved out of inner child)
+            static char configName[128] = "";
+            static std::vector<std::string> configFiles;
+            static int lastSelectedTab = -1;
+            static bool menuWasOpen = false;
+            if (shouldRenderMenu && !menuWasOpen) { menuWasOpen = true; configFiles = config.ListConfigs("configs/"); }
+            if (!shouldRenderMenu) { menuWasOpen = false; }
+            if (m_iSelectedPage == MenuPage_Config && lastSelectedTab != MenuPage_Config) { configFiles = config.ListConfigs("configs/"); }
+            lastSelectedTab = m_iSelectedPage;
+
+            if (ImAdd::Button("Refresh")) { configFiles = config.ListConfigs("configs/"); LOG_INFO("Refreshed config list"); }
+            ImGui::Separator();
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.13f, 0.13f, 0.13f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.22f, 0.22f, 0.22f, 0.5f));
+            if (ImGui::BeginListBox("Config list"))
             {
-                if (ImGui::BeginMenuBar()) {
-                    ImGui::Text("Configs");
-                    ImGui::EndMenuBar();
-                }
-
-                static char configName[128] = "";
-                static std::vector<std::string> configFiles;
-                static int lastSelectedTab = -1;
-                static bool menuWasOpen = false;
-                // Refresh config list when menu is opened or tab is switched to Config
-                if (shouldRenderMenu && !menuWasOpen) {
-                    menuWasOpen = true;
-                    configFiles = config.ListConfigs("configs/");
-                }
-                if (!shouldRenderMenu) {
-                    menuWasOpen = false;
-                }
-                if (m_iSelectedPage == MenuPage_Config && lastSelectedTab != MenuPage_Config) {
-                    configFiles = config.ListConfigs("configs/");
-                }
-                lastSelectedTab = m_iSelectedPage;
-
-                if (ImAdd::Button("Refresh"))
+                if (configFiles.empty())
+                    ImGui::Selectable("No configs found", false, ImGuiSelectableFlags_Disabled);
+                else
                 {
-                    configFiles = config.ListConfigs("configs/");
-                    LOG_INFO("Refreshed config list");
+                    for (const auto& file : configFiles)
+                    {
+                        bool isSelected = (file == configName);
+                        if (ImGui::Selectable(file.c_str(), isSelected))
+                            strcpy(configName, file.c_str());
+                        if (isSelected) ImGui::SetItemDefaultFocus();
+                    }
                 }
+                ImGui::EndListBox();
+            }
+            ImGui::PopStyleColor(2);
 
-                ImGui::Separator();
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.13f, 0.13f, 0.13f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.22f, 0.22f, 0.22f, 0.5f));
+            ImGui::InputText("Config Name", configName, IM_ARRAYSIZE(configName));
+            ImGui::PopStyleColor(2);
 
-                // Config List
-                ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.13f, 0.13f, 0.13f, 1.0f)); // lighter bg
-                ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.22f, 0.22f, 0.22f, 0.5f)); // less contrast
-if (ImGui::BeginListBox("Config list"))
-{
-    if (configFiles.empty())
-    {
-        ImGui::Selectable("No configs found", false, ImGuiSelectableFlags_Disabled);
-    }
-    else
-    {
-        for (const auto& file : configFiles)
-        {
-            bool isSelected = (file == configName);
-            if (ImGui::Selectable(file.c_str(), isSelected))
+            float buttonWidth = 75.0f;
+            float buttonSpacing = 10.0f;
+            ImGui::Dummy(ImVec2(0.0f, 5.0f));
+
+            if (ImAdd::Button("Load", ImVec2(buttonWidth, 0)))
             {
-                strcpy(configName, file.c_str());
+                std::string filePath = "configs/" + std::string(configName);
+                if (!config.LoadFromFile(filePath)) { LOG_ERROR("Failed to load config: {}", filePath); }
+                else { LOG_INFO("Loaded config: {}", filePath); }
             }
-            if (isSelected)
+            ImGui::SameLine(0.0f, buttonSpacing);
+            if (ImAdd::Button("Save", ImVec2(buttonWidth, 0)))
             {
-                ImGui::SetItemDefaultFocus();
+                std::string filePath = "configs/" + std::string(configName);
+                if (!config.SaveToFile(filePath)) { LOG_ERROR("Failed to save config: {}", filePath); }
+                else { LOG_INFO("Saved config: {}", filePath); }
             }
-        }
-    }
-    ImGui::EndListBox();
-}
-ImGui::PopStyleColor(2);
-
-                ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.13f, 0.13f, 0.13f, 1.0f)); // lighter bg
-                ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.22f, 0.22f, 0.22f, 0.5f)); // less contrast
-                ImGui::InputText("Config Name", configName, IM_ARRAYSIZE(configName));
-                ImGui::PopStyleColor(2);
-
-                // Control Buttons
-                float buttonWidth = 75.0f;
-                float buttonSpacing = 10.0f;
-                ImGui::Dummy(ImVec2(0.0f, 5.0f));
-
-                if (ImAdd::Button("Load", ImVec2(buttonWidth, 0)))
-                {
-                    std::string filePath = "configs/" + std::string(configName);
-                    if (!config.LoadFromFile(filePath))
-                    {
-                        LOG_ERROR("Failed to load config: {}", filePath);
-                        configNotification = "Failed to load config!";
-                    }
-                    else
-                    {
-                        LOG_INFO("Loaded config: {}", filePath);
-                        configNotification = "Config loaded!";
-                    }
-                    notificationTimer = 2.0f; // Show for 2 seconds
-                }
-
-                ImGui::SameLine(0.0f, buttonSpacing);
-
-                if (ImAdd::Button("Save", ImVec2(buttonWidth, 0)))
-                {
-                    std::string filePath = "configs/" + std::string(configName);
-                    if (!config.SaveToFile(filePath))
-                    {
-                        LOG_ERROR("Failed to save config: {}", filePath);
-                        configNotification = "Failed to save config!";
-                    }
-                    else
-                    {
-                        LOG_INFO("Saved config: {}", filePath);
-                        configNotification = "Config saved!";
-                    }
-                    notificationTimer = 2.0f; // Show for 2 seconds
-                }
-
-                ImGui::SameLine(0.0f, buttonSpacing);
-
-                if (ImAdd::Button("Delete", ImVec2(buttonWidth, 0)))
-                {
-                    std::string filePath = "configs/" + std::string(configName);
-                    if (!config.DeleteConfigFile(filePath))
-                    {
-                        LOG_ERROR("Failed to delete config: {}", filePath);
-                    }
-                    else
-                    {
-                        LOG_INFO("Deleted config: {}", filePath);
-                        configFiles = config.ListConfigs("configs/");
-                    }
-                }
-
-                ImGui::SameLine(0.0f, buttonSpacing);
-
-                if (ImAdd::Button("Import", ImVec2(buttonWidth, 0)))
-                {
-                    if (config.LoadFromClipboard())
-                    {
-                        LOG_INFO("Config imported from clipboard");
-                    }
-                    else
-                    {
-                        LOG_ERROR("Failed to import config from clipboard");
-                    }
-                }
-
-                ImGui::SameLine(0.0f, buttonSpacing);
-
-                if (ImAdd::Button("Unload", ImVec2(buttonWidth, 0)))
-                {
-                    Globals::Running = false;
-                    shouldRun = false;
-                    ExitProcess(0); // Immediate exit, let OS cleanup
-                }
+            ImGui::SameLine(0.0f, buttonSpacing);
+            if (ImAdd::Button("Delete", ImVec2(buttonWidth, 0)))
+            {
+                std::string filePath = "configs/" + std::string(configName);
+                if (!config.DeleteConfigFile(filePath)) { LOG_ERROR("Failed to delete config: {}", filePath); }
+                else { LOG_INFO("Deleted config: {}", filePath); configFiles = config.ListConfigs("configs/"); }
             }
-            ImGui::EndChild();
+            ImGui::SameLine(0.0f, buttonSpacing);
+            if (ImAdd::Button("Import", ImVec2(buttonWidth, 0)))
+            {
+                if (!config.LoadFromClipboard()) { LOG_ERROR("Failed to import config from clipboard"); }
+                else { LOG_INFO("Config imported from clipboard"); }
+            }
+            ImGui::SameLine(0.0f, buttonSpacing);
+            if (ImAdd::Button("Unload", ImVec2(buttonWidth, 0)))
+            {
+                Globals::Running = false; shouldRun = false; ExitProcess(0);
+            }
         }
         else if (m_iSelectedPage == 3) // Info
         {
-            ImGui::BeginChild("Info", ImVec2(0, 0), ImGuiChildFlags_Border, ImGuiWindowFlags_MenuBar);
-            {
-                if (ImGui::BeginMenuBar()) {
-                    ImGui::Text("Info");
-                    ImGui::EndMenuBar();
-                }
-
-                ImAdd::SeparatorText("Hardware");
-
-                ImGui::Text("DMA:");
-                ImGui::SameLine();
-                ImGui::TextColored(ProcInfo::DmaInitialized ? ImVec4(0, 1, 0, 1)/* green */ : ImVec4(1, 0, 0, 1)/* red */, "%s", ProcInfo::DmaInitialized ? "Connected" : "Disconnected");
-
-                ImGui::Text("KMBOX:");
-                ImGui::SameLine();
-                ImGui::TextColored(ProcInfo::KmboxInitialized ? ImVec4(0, 1, 0, 1)/* green */ : ImVec4(1, 0, 0, 1)/* red */, "%s", ProcInfo::KmboxInitialized ? "Connected" : "Disconnected");
-
-                ImAdd::SeparatorText("Game");
-
-                ImGui::Text("Client:");
-                ImGui::SameLine();
-                ImGui::Text("0x%llx", Globals::ClientBase);
-
-                ImAdd::SeparatorText("Cheat");
-
-                ImGui::Text("Overlay FPS: %.2f", OverlayFps);
-
-                float buttonWidth = 100.0f;
-                float buttonSpacing = 20.0f;
-                ImGui::SetCursorPosX((ImGui::GetWindowSize().x - 2 * buttonWidth - buttonSpacing) / 2);
-
-                if (ImAdd::Button("Open folder", ImVec2(buttonWidth, 0)))
-                {
-                    ShellExecuteA(nullptr, "open", "explorer.exe", ".\\", nullptr, SW_SHOW);
-                }
-
-                ImGui::SameLine();
-
-                if (ImAdd::Button("Unload", ImVec2(buttonWidth, 0)))
-                {
-                    Globals::Running = false;
-                    shouldRun = false;
-                    ExitProcess(0); // Immediate exit, let OS cleanup
-                }
-            }
-            ImGui::EndChild();
+            ImAdd::SeparatorText("Info");
+            ImAdd::SeparatorText("Hardware");
+            ImGui::Text("DMA:"); ImGui::SameLine(); ImGui::TextColored(ProcInfo::DmaInitialized ? ImVec4(0, 1, 0, 1) : ImVec4(1, 0, 0, 1), "%s", ProcInfo::DmaInitialized ? "Connected" : "Disconnected");
+            ImGui::Text("KMBOX:"); ImGui::SameLine(); ImGui::TextColored(ProcInfo::KmboxInitialized ? ImVec4(0, 1, 0, 1) : ImVec4(1, 0, 0, 1), "%s", ProcInfo::KmboxInitialized ? "Connected" : "Disconnected");
+            ImAdd::SeparatorText("Game");
+            ImGui::Text("Client:"); ImGui::SameLine(); ImGui::Text("0x%llx", Globals::ClientBase);
+            ImAdd::SeparatorText("Cheat");
+            ImGui::Text("Overlay FPS: %.2f", OverlayFps);
+            float buttonWidth = 100.0f; float buttonSpacing = 20.0f;
+            ImGui::SetCursorPosX((ImGui::GetWindowSize().x - 2 * buttonWidth - buttonSpacing) / 2);
+            if (ImAdd::Button("Open folder", ImVec2(buttonWidth, 0))) { ShellExecuteA(nullptr, "open", "explorer.exe", ".\\", nullptr, SW_SHOW); }
+            ImGui::SameLine();
+            if (ImAdd::Button("Unload", ImVec2(buttonWidth, 0))) { Globals::Running = false; shouldRun = false; ExitProcess(0); }
         }
 
-        // --- Config Notification ---
-        if (!configNotification.empty())
-        {
-            ImGui::SetCursorPosY(ImGui::GetWindowHeight() - 80); // Near the bottom
-            ImGui::BeginChild("ConfigNotification", ImVec2(0, 80), false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-            {
-                ImGui::TextColored(ImVec4(1, 1, 1, 1), "%s", configNotification.c_str());
-            }
-            ImGui::EndChild();
-        }
-
-        ImGui::PopFont(); // featureFont
+        ImGui::PopFont();
     }
     ImGui::End();
 }

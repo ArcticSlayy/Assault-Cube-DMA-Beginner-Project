@@ -2,7 +2,7 @@
     "Aim": {
         "AimFriendly": false,
         "AimVisible": false,
-        "Aimbot": true,
+        "Aimbot": false,
         "AimbotFov": 40.5,
         "AimbotFovColor": [
             1.0,
