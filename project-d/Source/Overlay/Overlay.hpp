@@ -60,14 +60,15 @@ public:
 
 	inline static bool shouldRun;
 
+	// Helpers for RT lifecycle (public for WM_SIZE handler)
+	static void CreateRenderTarget();
+	static void CleanupRenderTarget();
 
 private:
 	inline static int m_iSelectedPage;
 	inline static std::vector<const char*> m_Tabs;
 
 	inline static float OverlayFps;
-
-
 };
 
 inline Overlay overlay;

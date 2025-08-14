@@ -12,6 +12,12 @@
 #include "imgui/imgui.h"
 #include "imgui/imgui_internal.h"
 /*
+Overlay.cpp
+- Hosts all ImGui setup, styling, and the main menu rendering.
+- Contains a light-weight UI framework (PropertyRow, ToggleSwitch, etc.) used by all tabs.
+- Goal: beautiful yet performant UI with minimal per-frame allocations.
+*/
+/*
 If you want to change the icons or see what all icons there are available, you can use the font viewwer I have that works with the font_awesome.h/cpp.
 To use it, just uncomment the line below. Then open the normal menu which in my current case is Insert, then once the menu is open, press F10 to open the icon viewer.
 */
@@ -36,6 +42,24 @@ static ImVec4 s_LastAppliedAccent = ImVec4(-1, -1, -1, -1);
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 static const ImVec4 blueAccent = ImVec4(0.22f, 0.40f, 0.80f, 1.00f);
 ImVec4 gAccent = ImVec4(0.22f, 0.40f, 0.80f, 1.00f); // mutable accent (global)
+
+/*
+Small drawing helpers to add subtle polish with negligible cost.
+*/
+static void DrawShadowRect(ImDrawList* dl, ImVec2 a, ImVec2 b, float rounding, ImU32 col, int layers = 3, float spread = 4.0f, float alphaDecay = 0.35f)
+{
+    for (int i = 0; i < layers; ++i)
+    {
+        float t = 1.0f + (float)i * 0.5f;
+        ImU32 c = ImGui::GetColorU32(ImVec4(
+            ((col >> 0) & 0xFF) / 255.0f,
+            ((col >> 8) & 0xFF) / 255.0f,
+            ((col >> 16) & 0xFF) / 255.0f,
+            ImClamp(((col >> 24) & 0xFF) / 255.0f * powf(1.0f - alphaDecay, (float)i), 0.0f, 1.0f)
+        ));
+        dl->AddRect(a - ImVec2(spread * t, spread * t), b + ImVec2(spread * t, spread * t), c, rounding + t, 0, 1.0f);
+    }
+}
 
 static void HelpMarker(const char* desc)
 {
@@ -115,6 +139,22 @@ static void PropertyRow(const char* label, Fn drawer, const char* help = nullptr
     ImGui::Dummy(ImVec2(0.0f, st.ItemSpacing.y * 0.5f));
 }
 
+// Helpers for render target lifecycle
+void Overlay::CreateRenderTarget()
+{
+    ID3D11Texture2D* back_buffer{ nullptr };
+    if (swap_chain && SUCCEEDED(swap_chain->GetBuffer(0U, IID_PPV_ARGS(&back_buffer))) && back_buffer)
+    {
+        device->CreateRenderTargetView(back_buffer, nullptr, &render_targetview);
+        back_buffer->Release();
+    }
+}
+
+void Overlay::CleanupRenderTarget()
+{
+    if (render_targetview) { render_targetview->Release(); render_targetview = nullptr; }
+}
+
 LRESULT CALLBACK window_procedure(HWND window, UINT msg, WPARAM wParam, LPARAM lParam)
 {
 	if (ImGui_ImplWin32_WndProcHandler(window, msg, wParam, lParam))
@@ -126,6 +166,17 @@ LRESULT CALLBACK window_procedure(HWND window, UINT msg, WPARAM wParam, LPARAM l
 		if ((wParam & 0xfff0) == SC_KEYMENU)
 			return 0;
 		break;
+
+    case WM_SIZE:
+        if (wParam != SIZE_MINIMIZED && Overlay::device && Overlay::swap_chain)
+        {
+            Overlay::CleanupRenderTarget();
+            UINT w = LOWORD(lParam);
+            UINT h = HIWORD(lParam);
+            Overlay::swap_chain->ResizeBuffers(0, w, h, DXGI_FORMAT_UNKNOWN, 0);
+            Overlay::CreateRenderTarget();
+        }
+        return 0;
 
 	case WM_DESTROY:
 		Overlay::DestroyOverlay();
@@ -158,7 +209,7 @@ bool Overlay::CreateDevice()
 	sd.BufferDesc.RefreshRate.Numerator = 60;
 	sd.BufferDesc.RefreshRate.Denominator = 1;
 
-	sd.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
+	sd.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH; // keep simple; tear flag may not be available
 
 	sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
 
@@ -168,7 +219,7 @@ bool Overlay::CreateDevice()
 	sd.SampleDesc.Quality = 0;
 
 	sd.Windowed = TRUE;
-	sd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+	sd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD; // flip model
 
 	D3D_FEATURE_LEVEL featureLevel;
 	const D3D_FEATURE_LEVEL featureLevelArray[2] = { D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_0, };
@@ -209,22 +260,14 @@ bool Overlay::CreateDevice()
 		return false;
 	}
 
-	ID3D11Texture2D* back_buffer{ nullptr };
-	swap_chain->GetBuffer(0U, IID_PPV_ARGS(&back_buffer));
-
-	if (back_buffer)
-	{
-		device->CreateRenderTargetView(back_buffer, nullptr, &render_targetview);
-		back_buffer->Release();
-		return true;
-	}
-
-	LOG_ERROR("Failed to create device");
-	return false;
+    CreateRenderTarget();
+	return true;
 }
 
 void Overlay::DestroyDevice()
 {
+    CleanupRenderTarget();
+
     if (device_context)
     {
         device_context->Release();
@@ -243,16 +286,6 @@ void Overlay::DestroyDevice()
     else
     {
         LOG_ERROR("swap_chain is null during cleanup");
-    }
-
-    if (render_targetview)
-    {
-        render_targetview->Release();
-        render_targetview = nullptr;
-    }
-    else
-    {
-        LOG_ERROR("render_targetview is null during cleanup");
     }
 
     if (device)
@@ -322,6 +355,7 @@ bool Overlay::CreateOverlay()
 	ShowWindow(overlay, SW_SHOW);
 	UpdateWindow(overlay);
 
+	// Topmost is set once; avoid reasserting every frame
 	SetWindowPos(overlay, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
 
 	return true;
@@ -352,12 +386,14 @@ bool Overlay::CreateImGui()
 	static bool fontAtlasBuilt = false;
 	if (!fontAtlasBuilt) {
 		ImGuiIO& IO = ImGui::GetIO();
+        // System fonts: light, crisp look
         titleFont = IO.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\TahomaBD.ttf", 35.0f, nullptr, IO.Fonts->GetGlyphRangesDefault());
         tabFont = IO.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\Tahoma.ttf", 20.0f, nullptr, IO.Fonts->GetGlyphRangesDefault());
         featureFont = IO.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\Tahoma.ttf", 18.0f, nullptr, IO.Fonts->GetGlyphRangesDefault());
         sectionFont = IO.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\Tahoma.ttf", 22.0f, nullptr, IO.Fonts->GetGlyphRangesDefault());
         ImFont* MainFont = tabFont;
         IO.FontDefault = MainFont;
+        // Icon overlay font (merged)
         static const ImWchar icon_ranges[] = { 0xf000, 0xf8ff, 0 };
         ImFontConfig icons_config;
         icons_config.MergeMode = true;
@@ -448,7 +484,7 @@ void Overlay::EndRender()
         drawList->AddCircle(center, radius, ImGui::GetColorU32(color), 0, 2.0f);
     }
     
-    // Add watermark if enabled
+    // Add watermark if enabled (cheap text draws)
     if (config.Visuals.Watermark)
     {
         // Get FPS for watermark
@@ -507,10 +543,7 @@ void Overlay::EndRender()
         drawList->AddText(ImVec2(posX, posY), textColor, watermarkText);
         
         // Draw "Arctic" in bold (simulated by drawing it multiple times with slight offsets)
-        // First draw the bold Arctic text with shadow
         drawList->AddText(ImVec2(posX + textSize.x + 1, posY + 1), IM_COL32(0, 0, 0, 180), "Arctic");
-        
-        // Create bold effect by drawing the text multiple times with slight offsets
         for (float dx = -0.5f; dx <= 0.5f; dx += 0.5f) {
             for (float dy = -0.5f; dy <= 0.5f; dy += 0.5f) {
                 if (dx != 0 || dy != 0) {
@@ -518,8 +551,6 @@ void Overlay::EndRender()
                 }
             }
         }
-        
-        // Draw main "Arctic" text on top
         drawList->AddText(ImVec2(posX + textSize.x, posY), textColor, "Arctic");
     }
 
@@ -527,18 +558,13 @@ void Overlay::EndRender()
 
     auto beforePresent = std::chrono::steady_clock::now();
     
-    // Use DXGI_PRESENT_DO_NOT_WAIT to prevent blocking on VSync if possible
+    // Simple present; tearing flags may not be available on this SDK
     UINT presentFlags = 0;
-    if (!config.Visuals.VSync) {
-        presentFlags = 0; // Use 0 for immediate mode
-    }
-    
     HRESULT hr = swap_chain->Present(config.Visuals.VSync ? 1 : 0, presentFlags);
     
     auto afterPresent = std::chrono::steady_clock::now();
 
-    // Ensure overlay stays topmost every frame to prevent flicker
-    SetWindowPos(overlay, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    // Avoid SetWindowPos every frame (moved to creation)
 
     // Log timings for diagnostics
     static int frameCount = 0;
@@ -724,6 +750,7 @@ void Overlay::RenderMenu()
     }
 #endif
 
+    // Window size and beautiful background panel
     ImGui::SetNextWindowSize(ImVec2(1220, 750), ImGuiCond_Always);
     ImGui::Begin("Aetherial", &shouldRenderMenu, ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
@@ -831,7 +858,7 @@ void Overlay::RenderMenu()
         ImGui::InvisibleButton(icon, ImVec2(btnSize, btnSize));
         bool hovered = ImGui::IsItemHovered();
         ImVec4 hoverCol = ImVec4(gAccent.x, gAccent.y, gAccent.z, 0.25f);
-        ImU32 bgCol = hovered ? ImGui::GetColorU32(hoverCol) : ImGui::GetColorU32(ImVec4(0,0,0,0));
+        ImU32 bgCol = hovered ? ImGui::GetColorU32(hoverCol) : ImGui::GetColorU32(ImVec4(0, 0, 0, 0));
         dl->AddRectFilled(pos, pos + ImVec2(btnSize, btnSize), bgCol, 6.0f);
         ImVec2 iconPos = pos + ImVec2((btnSize - (iconFont ? iconFont->FontSize : 18.0f)) * 0.5f, (btnSize - (iconFont ? iconFont->FontSize : 18.0f)) * 0.5f);
         ImGui::PushFont(iconFont);
@@ -902,6 +929,16 @@ void Overlay::RenderMenu()
     float footerHeight = 32.0f;
     float sidebarWidth = 220.0f;
     float sidebarHeight = winSize.y - titleBarHeight - footerHeight;
+    // Draw a soft panel background behind content for an elevated look
+    {
+        ImVec2 panelMin = winPos + ImVec2(10, titleBarHeight + 8);
+        ImVec2 panelMax = winPos + ImVec2(winSize.x - 10, winSize.y - 10);
+        ImU32 bg = ImGui::GetColorU32(ImVec4(0.10f, 0.10f, 0.11f, 1.0f));
+        DrawShadowRect(dl, panelMin, panelMax, 18.0f, ImGui::GetColorU32(ImVec4(0,0,0,0.20f)), 4, 4.0f, 0.35f);
+        dl->AddRectFilled(panelMin, panelMax, bg, 18.0f);
+        dl->AddRect(panelMin, panelMax, ImGui::GetColorU32(ImVec4(1,1,1,0.04f)), 18.0f);
+    }
+
     ImGui::BeginChild("Sidebar", ImVec2(sidebarWidth, sidebarHeight), false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     {
         ImGui::SetScrollY(0);
@@ -964,7 +1001,7 @@ void Overlay::RenderMenu()
     ImGui::SameLine();
 
     // --- Main Content ---
-    // Remove extra outer rounded rectangle: no bordered MainContent, only panel per tab
+    // Remove extra outer bordered window; panels are framed individually.
     ImGui::BeginChild("MainContent", ImVec2(0, sidebarHeight), false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     {
         ImGui::PushFont(featureFont);
@@ -999,7 +1036,7 @@ void Overlay::RenderMenu()
               sdl->AddRectFilledMultiColor(ImVec2(startX, centerY - h * 0.5f), ImVec2(contentMax.x, centerY + h * 0.5f), leftC, rightC, rightC, leftC);
           };
 
-        // One panel per tab (no extra outer border). Only inner sections get borders.
+        // One panel per tab
         if (m_iSelectedPage == 0) // Aim
         {
             SectionHeader("Aim", true);

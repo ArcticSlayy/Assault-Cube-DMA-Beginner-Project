@@ -4,6 +4,13 @@
 #include <Overlay.hpp>
 #include <ESP/ESP.hpp>
 
+/*
+main.cpp
+- Bootstraps config, logging, KMBOX (optional), DMA + SDK, features, background entity update thread, and overlay.
+- Keeps initialization linear and early-outs on failure with logs.
+- Main loop strictly handles overlay rendering; heavy work is offloaded to UpdateEntities() thread.
+*/
+
 int main()
 {
     SetConsoleTitleA("Console - Debug");
@@ -19,6 +26,7 @@ int main()
     |/_____\|/_____\|/_____\|/_____\|/_____\|/_____\|
 )" << '\n';
 
+    // Exception handler must be first to catch early issues
     if (!c_exception_handler::setup())
     {
         LOG_ERROR("Failed to setup Exception Handler");
@@ -26,6 +34,7 @@ int main()
         return 1;
     }
 
+    // Config before any feature uses it
     if (!config.Init())
     {
         LOG_ERROR("Failed to initialize Config");
@@ -33,13 +42,14 @@ int main()
         return 1;
     }
 
+    // Optional: KMBOX hardware
     if (config.Kmbox.Enabled)
     {
         if (Kmbox.InitDevice(config.Kmbox.Ip, config.Kmbox.Port, config.Kmbox.Uuid) == 0)
         {
             ProcInfo::KmboxInitialized = true;
 
-            // Demo: move mouse left/up by 100 pixels
+            // Demo: move mouse left/up by 100 pixels (sanity test)
             int moveRc = Kmbox.Mouse.MoveRelative(-100, -100);
             if (moveRc == 0) LOG_INFO("KMBox: moved mouse by (-100, -100)");
             else LOG_ERROR("KMBox: MoveRelative failed: {}", moveRc);
@@ -50,7 +60,7 @@ int main()
             if (monRc == 0) LOG_INFO("KMBox monitor started on UDP port {}", kMonitorPort);
             else LOG_ERROR("KMBox monitor start failed: {}", monRc);
 
-            // Background watcher: log when right mouse button is pressed
+            // Background watcher: log when right mouse button is pressed (non-blocking)
             static std::thread s_kmboxMouseWatch([&]() {
                 bool lastRight = false;
                 while (Globals::Running)
@@ -77,6 +87,7 @@ int main()
         ProcInfo::KmboxInitialized = false;
     }
 
+    // DMA, SDK, features bring-up
     if (!dma.Init())
     {
         LOG_ERROR("Failed to initialize DMA");
@@ -98,9 +109,10 @@ int main()
 		return 1;
 	}
 
-    // Start entity update thread for ESP
+    // Start entity update thread for ESP (lock-free render path)
     EntityManager::StartEntityUpdateThread();
 
+    // UI overlay last for a responsive window
     if (!overlay.Create())
     {
 		LOG_ERROR("Failed to create Overlay");
@@ -110,6 +122,7 @@ int main()
 
     LOG_INFO("Initialization complete! Press INSERT to open the menu");
 
+    // Main render loop (tight, no heavy work here)
     while (overlay.shouldRun)
     {
         TIMER("Global render");
@@ -123,6 +136,7 @@ int main()
         if (!drawList)
             continue;
 
+        // Cheap per-frame update and draw of ESP
         esp.Update(drawList);
 
         overlay.EndRender();

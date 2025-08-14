@@ -1,9 +1,9 @@
 #include <Pch.hpp>
 #include "Manager.hpp"
 
+// Align implementation closely with public kmboxNet reference
 namespace {
-    constexpr int kDefaultTimeoutMs = 1000;      // 1s timeout
-    constexpr int kRxBufferBytes   = 1024;       // per packet payload size
+    constexpr int kRxBufferBytes = 1024; // per packet payload size for KMBox showpic
 }
 
 KmBoxNetManager::~KmBoxNetManager()
@@ -20,14 +20,6 @@ KmBoxNetManager::~KmBoxNetManager()
     }
 }
 
-static bool SetSocketTimeouts(SOCKET s, int ms)
-{
-    if (s == INVALID_SOCKET) return false;
-    DWORD to = ms;
-    return setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (const char*)&to, sizeof(to)) == 0 &&
-           setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, (const char*)&to, sizeof(to)) == 0;
-}
-
 int KmBoxNetManager::InitDevice(const string& IP, WORD Port, const string& Mac)
 {
     WSADATA wsaData{};
@@ -39,13 +31,6 @@ int KmBoxNetManager::InitDevice(const string& IP, WORD Port, const string& Mac)
     s_Client = socket(AF_INET, SOCK_DGRAM, 0);
     if (s_Client == INVALID_SOCKET)
         return err_creat_socket;
-
-    // Optional: allow fast reuse
-    DWORD yes = 1;
-    setsockopt(s_Client, SOL_SOCKET, SO_REUSEADDR, (const char*)&yes, sizeof(yes));
-
-    // Apply timeouts
-    SetSocketTimeouts(s_Client, kDefaultTimeoutMs);
 
     // Server address
     ZeroMemory(&AddrServer, sizeof(AddrServer));
@@ -60,28 +45,18 @@ int KmBoxNetManager::InitDevice(const string& IP, WORD Port, const string& Mac)
     PostData.head.indexpts = 0;
     PostData.head.cmd = cmd_connect;
 
-    // Try a couple of times in case device is waking
-    int attempts = 2;
-    int status = SOCKET_ERROR;
-    while (attempts-- > 0)
-    {
-        status = sendto(s_Client, reinterpret_cast<const char*>(&PostData), sizeof(cmd_head_t), 0,
-            reinterpret_cast<sockaddr*>(&AddrServer), sizeof(AddrServer));
-        if (status == SOCKET_ERROR)
-            continue;
+    // Send connect and wait for response
+    int status = sendto(s_Client, reinterpret_cast<const char*>(&PostData), sizeof(cmd_head_t), 0,
+        reinterpret_cast<sockaddr*>(&AddrServer), sizeof(AddrServer));
+    if (status == SOCKET_ERROR)
+        return err_creat_socket;
 
-        this_thread::sleep_for(chrono::milliseconds(20));
-        int fromLen = sizeof(AddrServer);
-        status = recvfrom(s_Client, reinterpret_cast<char*>(&ReceiveData), kRxBufferBytes, 0,
-            reinterpret_cast<sockaddr*>(&AddrServer), &fromLen);
-        if (status > 0)
-            break;
-        this_thread::sleep_for(chrono::milliseconds(30));
-    }
+    int fromLen = sizeof(AddrServer);
+    status = recvfrom(s_Client, reinterpret_cast<char*>(&ReceiveData), kRxBufferBytes, 0,
+        reinterpret_cast<sockaddr*>(&AddrServer), &fromLen);
     if (status <= 0)
         return err_net_rx_timeout;
 
-    LOG_INFO("Successfully connected to KMBOX: IP={} Port={} UUID={}", IP, Port, Mac);
     return NetHandler();
 }
 
@@ -89,24 +64,15 @@ int KmBoxNetManager::SendData(int dataLength)
 {
     if (s_Client == INVALID_SOCKET) return err_creat_socket;
 
-    int attempts = 2;
-    int status = SOCKET_ERROR;
-    while (attempts-- > 0)
-    {
-        status = sendto(s_Client, reinterpret_cast<const char*>(&PostData), dataLength, 0,
-            reinterpret_cast<sockaddr*>(&AddrServer), sizeof(AddrServer));
-        if (status == SOCKET_ERROR)
-            continue;
+    int status = sendto(s_Client, reinterpret_cast<const char*>(&PostData), dataLength, 0,
+        reinterpret_cast<sockaddr*>(&AddrServer), sizeof(AddrServer));
+    if (status == SOCKET_ERROR)
+        return err_creat_socket;
 
-        SOCKADDR_IN newClient{};
-        int fromLen = sizeof(newClient);
-        status = recvfrom(s_Client, reinterpret_cast<char*>(&ReceiveData), kRxBufferBytes, 0,
-            reinterpret_cast<sockaddr*>(&newClient), &fromLen);
-        if (status > 0)
-            break;
-        this_thread::sleep_for(chrono::milliseconds(5));
-    }
-
+    SOCKADDR_IN newClient{};
+    int fromLen = sizeof(newClient);
+    status = recvfrom(s_Client, reinterpret_cast<char*>(&ReceiveData), kRxBufferBytes, 0,
+        reinterpret_cast<sockaddr*>(&newClient), &fromLen);
     if (status <= 0)
         return err_net_rx_timeout;
 
@@ -125,7 +91,7 @@ int KmBoxNetManager::RebootDevice()
     int length = sizeof(cmd_head_t);
     int rc = SendData(length);
 
-    // After reboot request, clean up local socket; device will drop connection
+    // After reboot request, clean up local socket
     closesocket(s_Client);
     s_Client = INVALID_SOCKET;
     if (m_WsaStarted)
@@ -158,9 +124,9 @@ void KmBoxNetManager::SpeedTest(int count)
     for (int i = count; i > 0; i -= 2)
     {
         int ret = Kmbox.Mouse.Move(0, -100);
-        if (ret != 0) LOG_ERROR("tx error {} ret1={}", i, ret);
+        if (ret != 0) LOG_ERROR("tx error {} ret1= {}", i, ret);
         ret = Kmbox.Mouse.Move(0, 100);
-        if (ret != 0) LOG_ERROR("tx error {} ret2={}", i, ret);
+        if (ret != 0) LOG_ERROR("tx error {} ret2= {}", i, ret);
     }
     auto ms = chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - startTime).count();
     LOG_INFO("Speed test ({} calls) took {} ms", count, ms);
@@ -175,6 +141,11 @@ int KmBoxNetManager::NetHandler()
     return 0;
 }
 
+/*
+Move the mouse by x,y units. Move once without trajectory simulation, fastest speed.
+Use this function when writing the trajectory movement yourself.
+Return value: 0 for normal execution, other values for exceptions.
+*/
 int KmBoxMouse::Move(int x, int y)
 {
     if (Kmbox.s_Client == INVALID_SOCKET)
@@ -197,6 +168,9 @@ int KmBoxMouse::Move(int x, int y)
     return Kmbox.SendData(length);
 }
 
+/*
+Relative mouse move by dx,dy units.
+*/
 int KmBoxMouse::MoveRelative(int dx, int dy)
 {
     if (Kmbox.s_Client == INVALID_SOCKET)
@@ -219,6 +193,10 @@ int KmBoxMouse::MoveRelative(int dx, int dy)
     return Kmbox.SendData(length);
 }
 
+/*
+Move the mouse by x,y units with device-side human-like simulation.
+Runtime: desired duration in ms.
+*/
 int KmBoxMouse::Move_Auto(int x, int y, int Runtime)
 {
     if (Kmbox.s_Client == INVALID_SOCKET)
@@ -241,6 +219,9 @@ int KmBoxMouse::Move_Auto(int x, int y, int Runtime)
     return Kmbox.SendData(length);
 }
 
+/*
+Mouse left button control. Down=true press, false release.
+*/
 int KmBoxMouse::Left(bool Down)
 {
     if (Kmbox.s_Client == INVALID_SOCKET)
@@ -259,6 +240,9 @@ int KmBoxMouse::Left(bool Down)
     return Kmbox.SendData(length);
 }
 
+/*
+Mouse right button control. Down=true press, false release.
+*/
 int KmBoxMouse::Right(bool Down)
 {
     if (Kmbox.s_Client == INVALID_SOCKET)
@@ -277,6 +261,9 @@ int KmBoxMouse::Right(bool Down)
     return Kmbox.SendData(length);
 }
 
+/*
+Mouse middle button control. Down=true press, false release.
+*/
 int KmBoxMouse::Middle(bool Down)
 {
     if (Kmbox.s_Client == INVALID_SOCKET)
@@ -292,6 +279,98 @@ int KmBoxMouse::Middle(bool Down)
 
     int length = sizeof(cmd_head_t) + sizeof(soft_mouse_t);
 
+    return Kmbox.SendData(length);
+}
+
+/* Mouse wheel control */
+int KmBoxMouse::Wheel(int wheel)
+{
+    if (Kmbox.s_Client == INVALID_SOCKET)
+        return err_creat_socket;
+
+    Kmbox.PostData.head.indexpts++;
+    Kmbox.PostData.head.cmd = cmd_mouse_wheel;
+    Kmbox.PostData.head.rand = rand();
+
+    this->MouseData.wheel = wheel;
+    memcpy_s(&Kmbox.PostData.cmd_mouse, sizeof(soft_mouse_t), &this->MouseData, sizeof(soft_mouse_t));
+    int length = sizeof(cmd_head_t) + sizeof(soft_mouse_t);
+    this->MouseData.wheel = 0;
+    return Kmbox.SendData(length);
+}
+
+/* Mouse full report control */
+int KmBoxMouse::All(int button, int x, int y, int wheel)
+{
+    if (Kmbox.s_Client == INVALID_SOCKET)
+        return err_creat_socket;
+
+    Kmbox.PostData.head.indexpts++;
+    Kmbox.PostData.head.cmd = cmd_mouse_wheel; // matches reference implementation
+    Kmbox.PostData.head.rand = rand();
+
+    this->MouseData.button = button;
+    this->MouseData.x = x;
+    this->MouseData.y = y;
+    this->MouseData.wheel = wheel;
+
+    memcpy_s(&Kmbox.PostData.cmd_mouse, sizeof(soft_mouse_t), &this->MouseData, sizeof(soft_mouse_t));
+
+    int length = sizeof(cmd_head_t) + sizeof(soft_mouse_t);
+
+    this->MouseData.x = 0;
+    this->MouseData.y = 0;
+    this->MouseData.wheel = 0;
+
+    return Kmbox.SendData(length);
+}
+
+/* Mouse side button 1 control */
+int KmBoxMouse::Side1(bool Down)
+{
+    if (Kmbox.s_Client == INVALID_SOCKET)
+        return err_creat_socket;
+    Kmbox.PostData.head.indexpts++;
+    Kmbox.PostData.head.cmd = cmd_mouse_right; // as per reference
+    Kmbox.PostData.head.rand = rand();
+    this->MouseData.button = (Down ? (this->MouseData.button | 0x08) : (this->MouseData.button & (~0x08)));
+    memcpy_s(&Kmbox.PostData.cmd_mouse, sizeof(soft_mouse_t), &this->MouseData, sizeof(soft_mouse_t));
+    int length = sizeof(cmd_head_t) + sizeof(soft_mouse_t);
+    return Kmbox.SendData(length);
+}
+
+/* Mouse side button 2 control */
+int KmBoxMouse::Side2(bool Down)
+{
+    if (Kmbox.s_Client == INVALID_SOCKET)
+        return err_creat_socket;
+    Kmbox.PostData.head.indexpts++;
+    Kmbox.PostData.head.cmd = cmd_mouse_right; // as per reference
+    Kmbox.PostData.head.rand = rand();
+    this->MouseData.button = (Down ? (this->MouseData.button | 0x10) : (this->MouseData.button & (~0x10)));
+    memcpy_s(&Kmbox.PostData.cmd_mouse, sizeof(soft_mouse_t), &this->MouseData, sizeof(soft_mouse_t));
+    int length = sizeof(cmd_head_t) + sizeof(soft_mouse_t);
+    return Kmbox.SendData(length);
+}
+
+/* Second-order Bezier curve control */
+int KmBoxMouse::BezierMove(int x, int y, int ms, int x1, int y1, int x2, int y2)
+{
+    if (Kmbox.s_Client == INVALID_SOCKET)
+        return err_creat_socket;
+    Kmbox.PostData.head.indexpts++;
+    Kmbox.PostData.head.cmd = cmd_bazerMove;
+    Kmbox.PostData.head.rand = ms;
+    this->MouseData.x = x;
+    this->MouseData.y = y;
+    this->MouseData.point[0] = x1;
+    this->MouseData.point[1] = y1;
+    this->MouseData.point[2] = x2;
+    this->MouseData.point[3] = y2;
+    memcpy_s(&Kmbox.PostData.cmd_mouse, sizeof(soft_mouse_t), &this->MouseData, sizeof(soft_mouse_t));
+    int length = sizeof(cmd_head_t) + sizeof(soft_mouse_t);
+    this->MouseData.x = 0;
+    this->MouseData.y = 0;
     return Kmbox.SendData(length);
 }
 
@@ -417,6 +496,126 @@ bool KmBoxKeyBoard::GetKeyState(WORD vKey)
     return false;
 }
 
+// Convenience monitor helpers mirroring kmNet_monitor_* API
+int KmBoxKeyBoard::MonitorMouseLeft() { if (!ListenerRuned) return -1; return (hw_Mouse.buttons & 0x01) ? 1 : 0; }
+int KmBoxKeyBoard::MonitorMouseMiddle() { if (!ListenerRuned) return -1; return (hw_Mouse.buttons & 0x04) ? 1 : 0; }
+int KmBoxKeyBoard::MonitorMouseRight() { if (!ListenerRuned) return -1; return (hw_Mouse.buttons & 0x02) ? 1 : 0; }
+int KmBoxKeyBoard::MonitorMouseSide1() { if (!ListenerRuned) return -1; return (hw_Mouse.buttons & 0x08) ? 1 : 0; }
+int KmBoxKeyBoard::MonitorMouseSide2() { if (!ListenerRuned) return -1; return (hw_Mouse.buttons & 0x10) ? 1 : 0; }
+int KmBoxKeyBoard::MonitorMouseXY(int& x, int& y)
+{
+    static int lastx = 0, lasty = 0;
+    if (!ListenerRuned) return -1;
+    x = hw_Mouse.x; y = hw_Mouse.y;
+    if (x != lastx || y != lasty) { lastx = x; lasty = y; return 1; }
+    return 0;
+}
+int KmBoxKeyBoard::MonitorMouseWheel(int& wheel)
+{
+    static int lastwheel = 0;
+    if (!ListenerRuned) return -1;
+    wheel = hw_Mouse.wheel;
+    if (wheel != lastwheel) { lastwheel = wheel; return 1; }
+    return 0;
+}
+
+// Keyboard send helpers
+int KmBoxKeyBoard::KeyDown(int vk_key)
+{
+    if (Kmbox.s_Client == INVALID_SOCKET) return err_creat_socket;
+
+    if (vk_key >= KEY_LEFTCONTROL && vk_key <= KEY_RIGHT_GUI)
+    {
+        switch (vk_key)
+        {
+        case KEY_LEFTCONTROL: SoftKeyboardData.ctrl |= BIT0; break;
+        case KEY_LEFTSHIFT:   SoftKeyboardData.ctrl |= BIT1; break;
+        case KEY_LEFTALT:     SoftKeyboardData.ctrl |= BIT2; break;
+        case KEY_LEFT_GUI:    SoftKeyboardData.ctrl |= BIT3; break;
+        case KEY_RIGHTCONTROL:SoftKeyboardData.ctrl |= BIT4; break;
+        case KEY_RIGHTSHIFT:  SoftKeyboardData.ctrl |= BIT5; break;
+        case KEY_RIGHTALT:    SoftKeyboardData.ctrl |= BIT6; break;
+        case KEY_RIGHT_GUI:   SoftKeyboardData.ctrl |= BIT7; break;
+        }
+    }
+    else
+    {
+        for (int i = 0; i < 10; ++i)
+        {
+            if (SoftKeyboardData.button[i] == vk_key)
+                goto SEND_DOWN;
+        }
+        for (int i = 0; i < 10; ++i)
+        {
+            if (SoftKeyboardData.button[i] == 0)
+            {
+                SoftKeyboardData.button[i] = static_cast<unsigned char>(vk_key);
+                goto SEND_DOWN;
+            }
+        }
+        // queue full -> drop oldest
+        memcpy(&SoftKeyboardData.button[0], &SoftKeyboardData.button[1], 9);
+        SoftKeyboardData.button[9] = static_cast<unsigned char>(vk_key);
+    }
+SEND_DOWN:
+    Kmbox.PostData.head.indexpts++;
+    Kmbox.PostData.head.cmd = cmd_keyboard_all;
+    Kmbox.PostData.head.rand = rand();
+
+    memcpy_s(&Kmbox.PostData.cmd_keyboard, sizeof(soft_keyboard_t), &SoftKeyboardData, sizeof(soft_keyboard_t));
+    int length = sizeof(cmd_head_t) + sizeof(soft_keyboard_t);
+    return Kmbox.SendData(length);
+}
+
+int KmBoxKeyBoard::KeyUp(int vk_key)
+{
+    if (Kmbox.s_Client == INVALID_SOCKET) return err_creat_socket;
+
+    if (vk_key >= KEY_LEFTCONTROL && vk_key <= KEY_RIGHT_GUI)
+    {
+        switch (vk_key)
+        {
+        case KEY_LEFTCONTROL: SoftKeyboardData.ctrl &= ~BIT0; break;
+        case KEY_LEFTSHIFT:   SoftKeyboardData.ctrl &= ~BIT1; break;
+        case KEY_LEFTALT:     SoftKeyboardData.ctrl &= ~BIT2; break;
+        case KEY_LEFT_GUI:    SoftKeyboardData.ctrl &= ~BIT3; break;
+        case KEY_RIGHTCONTROL:SoftKeyboardData.ctrl &= ~BIT4; break;
+        case KEY_RIGHTSHIFT:  SoftKeyboardData.ctrl &= ~BIT5; break;
+        case KEY_RIGHTALT:    SoftKeyboardData.ctrl &= ~BIT6; break;
+        case KEY_RIGHT_GUI:   SoftKeyboardData.ctrl &= ~BIT7; break;
+        }
+    }
+    else
+    {
+        for (int i = 0; i < 10; ++i)
+        {
+            if (SoftKeyboardData.button[i] == vk_key)
+            {
+                memcpy(&SoftKeyboardData.button[i], &SoftKeyboardData.button[i + 1], 9 - i);
+                SoftKeyboardData.button[9] = 0;
+                break;
+            }
+        }
+    }
+
+    Kmbox.PostData.head.indexpts++;
+    Kmbox.PostData.head.cmd = cmd_keyboard_all;
+    Kmbox.PostData.head.rand = rand();
+
+    memcpy_s(&Kmbox.PostData.cmd_keyboard, sizeof(soft_keyboard_t), &SoftKeyboardData, sizeof(soft_keyboard_t));
+    int length = sizeof(cmd_head_t) + sizeof(soft_keyboard_t);
+    return Kmbox.SendData(length);
+}
+
+int KmBoxKeyBoard::KeyPress(int vk_key, int ms)
+{
+    KeyDown(vk_key);
+    Sleep(ms / 2);
+    KeyUp(vk_key);
+    Sleep(ms / 2);
+    return 0;
+}
+
 // Fill LCD with color
 int KmBoxNetManager::FillLCDColor(unsigned short rgb565) {
     if (this->s_Client == INVALID_SOCKET)
@@ -505,4 +704,103 @@ int KmBoxNetManager::ChangePictureBottom(const unsigned char* buff_128_80) {
     }
 
     return NetHandler();
+}
+
+/* Mask/unmask helpers mirror kmNet_mask_* API */
+int KmBoxNetManager::MaskMouseLeft(int enable)
+{
+    if (s_Client == INVALID_SOCKET) return err_creat_socket;
+    PostData.head.indexpts++; PostData.head.cmd = cmd_mask_mouse;
+    PostData.head.rand = enable ? (m_maskKeyboardMouseFlag |= BIT0) : (m_maskKeyboardMouseFlag &= ~BIT0);
+    return SendData(sizeof(cmd_head_t));
+}
+int KmBoxNetManager::MaskMouseRight(int enable)
+{
+    if (s_Client == INVALID_SOCKET) return err_creat_socket;
+    PostData.head.indexpts++; PostData.head.cmd = cmd_mask_mouse;
+    PostData.head.rand = enable ? (m_maskKeyboardMouseFlag |= BIT1) : (m_maskKeyboardMouseFlag &= ~BIT1);
+    return SendData(sizeof(cmd_head_t));
+}
+int KmBoxNetManager::MaskMouseMiddle(int enable)
+{
+    if (s_Client == INVALID_SOCKET) return err_creat_socket;
+    PostData.head.indexpts++; PostData.head.cmd = cmd_mask_mouse;
+    PostData.head.rand = enable ? (m_maskKeyboardMouseFlag |= BIT2) : (m_maskKeyboardMouseFlag &= ~BIT2);
+    return SendData(sizeof(cmd_head_t));
+}
+int KmBoxNetManager::MaskMouseSide1(int enable)
+{
+    if (s_Client == INVALID_SOCKET) return err_creat_socket;
+    PostData.head.indexpts++; PostData.head.cmd = cmd_mask_mouse;
+    PostData.head.rand = enable ? (m_maskKeyboardMouseFlag |= BIT3) : (m_maskKeyboardMouseFlag &= ~BIT3);
+    return SendData(sizeof(cmd_head_t));
+}
+int KmBoxNetManager::MaskMouseSide2(int enable)
+{
+    if (s_Client == INVALID_SOCKET) return err_creat_socket;
+    PostData.head.indexpts++; PostData.head.cmd = cmd_mask_mouse;
+    PostData.head.rand = enable ? (m_maskKeyboardMouseFlag |= BIT4) : (m_maskKeyboardMouseFlag &= ~BIT4);
+    return SendData(sizeof(cmd_head_t));
+}
+int KmBoxNetManager::MaskMouseX(int enable)
+{
+    if (s_Client == INVALID_SOCKET) return err_creat_socket;
+    PostData.head.indexpts++; PostData.head.cmd = cmd_mask_mouse;
+    PostData.head.rand = enable ? (m_maskKeyboardMouseFlag |= BIT5) : (m_maskKeyboardMouseFlag &= ~BIT5);
+    return SendData(sizeof(cmd_head_t));
+}
+int KmBoxNetManager::MaskMouseY(int enable)
+{
+    if (s_Client == INVALID_SOCKET) return err_creat_socket;
+    PostData.head.indexpts++; PostData.head.cmd = cmd_mask_mouse;
+    PostData.head.rand = enable ? (m_maskKeyboardMouseFlag |= BIT6) : (m_maskKeyboardMouseFlag &= ~BIT6);
+    return SendData(sizeof(cmd_head_t));
+}
+int KmBoxNetManager::MaskMouseWheel(int enable)
+{
+    if (s_Client == INVALID_SOCKET) return err_creat_socket;
+    PostData.head.indexpts++; PostData.head.cmd = cmd_mask_mouse;
+    PostData.head.rand = enable ? (m_maskKeyboardMouseFlag |= BIT7) : (m_maskKeyboardMouseFlag &= ~BIT7);
+    return SendData(sizeof(cmd_head_t));
+}
+int KmBoxNetManager::MaskKeyboard(short vkey)
+{
+    if (s_Client == INVALID_SOCKET) return err_creat_socket;
+    PostData.head.indexpts++; PostData.head.cmd = cmd_mask_mouse;
+    unsigned char vk = vkey & 0xff;
+    PostData.head.rand = (m_maskKeyboardMouseFlag & 0xff) | (vk << 8);
+    return SendData(sizeof(cmd_head_t));
+}
+int KmBoxNetManager::UnmaskKeyboard(short vkey)
+{
+    if (s_Client == INVALID_SOCKET) return err_creat_socket;
+    PostData.head.indexpts++; PostData.head.cmd = cmd_unmask_all;
+    unsigned char vk = vkey & 0xff;
+    PostData.head.rand = (m_maskKeyboardMouseFlag & 0xff) | (vk << 8);
+    return SendData(sizeof(cmd_head_t));
+}
+int KmBoxNetManager::UnmaskAll()
+{
+    if (s_Client == INVALID_SOCKET) return err_creat_socket;
+    PostData.head.indexpts++; PostData.head.cmd = cmd_unmask_all;
+    m_maskKeyboardMouseFlag = 0;
+    PostData.head.rand = m_maskKeyboardMouseFlag;
+    return SendData(sizeof(cmd_head_t));
+}
+
+int KmBoxNetManager::SetVidPid(unsigned short vid, unsigned short pid)
+{
+    if (s_Client == INVALID_SOCKET) return err_creat_socket;
+    PostData.head.indexpts++; PostData.head.cmd = cmd_setvidpid;
+    PostData.head.rand = vid | (pid << 16);
+    return SendData(sizeof(cmd_head_t));
+}
+
+/* Enable hardware trace/curve processing */
+int KmBoxNetManager::Trace(int type, int value)
+{
+    if (s_Client == INVALID_SOCKET) return err_creat_socket;
+    PostData.head.indexpts++; PostData.head.cmd = cmd_trace_enable;
+    PostData.head.rand = (type << 24) | value;
+    return SendData(sizeof(cmd_head_t));
 }

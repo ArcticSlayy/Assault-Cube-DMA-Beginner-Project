@@ -11,6 +11,14 @@
 #include <unordered_set>
 #include <spdlog/spdlog.h>
 
+/*
+ESP.cpp
+- High-performance entity polling and rendering.
+- Implements a triple-buffered entity data pipeline + atomically swapped view matrix.
+- Focus on minimizing stalls and allocations per frame.
+- This file is performance-critical: prefer static storage, reserve(), and predictable branches.
+*/
+
 namespace EntityManager {
     // Triple buffer system for entities
     struct EntityBuffer {
@@ -132,6 +140,7 @@ namespace EntityManager {
         }
         
         void removeStaleEntities(int maxFailedFrames) {
+            // Compact in-place to avoid vector churn
             std::lock_guard<std::mutex> lock(mutex);
             size_t writeIndex = 0;
             std::unordered_map<std::string, size_t> newMap;
@@ -270,6 +279,7 @@ namespace EntityManager {
 
     // Pre-fetch and prepare for entity reading
     void PrepareEntityRead(VMMDLL_SCATTER_HANDLE scatterGlobals, uint32_t& playerCount, uint32_t& dwLocalPlayer, uint32_t& entityListAddr, Matrix& newViewMatrix, uint32_t& localPlayerTeam) {
+        // Keep the scatter submission list minimal and predictable
         mem.AddScatterReadRequest(scatterGlobals, Globals::ClientBase + p_game->player_count, &playerCount, sizeof(playerCount));
         mem.AddScatterReadRequest(scatterGlobals, Globals::ClientBase + p_game->local_player, &dwLocalPlayer, sizeof(dwLocalPlayer));
         mem.AddScatterReadRequest(scatterGlobals, Globals::ClientBase + p_game->entity_list, &entityListAddr, sizeof(entityListAddr));
@@ -856,7 +866,7 @@ void ESP::Render(ImDrawList* drawList)
     lastFrameTime = frameStart;
     EntityManager::lastRenderTime = frameStart;
 
-    // Toggle debug
+    // Toggle debug (F9)
     static SHORT lastKeyState = 0;
     SHORT keyState = GetAsyncKeyState(VK_F9);
     if ((keyState & 0x1) && !(lastKeyState & 0x1)) {
@@ -865,7 +875,7 @@ void ESP::Render(ImDrawList* drawList)
     }
     lastKeyState = keyState;
 
-    // Clamp delta time
+    // Clamp delta time (avoid large spikes from minimizing or long breaks)
     const float MAX_DELTA_TIME = 0.05f;
     deltaTime = std::min(std::max(deltaTime, 0.0f), MAX_DELTA_TIME);
     tlsAnimationState.deltaTime = deltaTime;
@@ -873,7 +883,7 @@ void ESP::Render(ImDrawList* drawList)
                                   deltaTime * (1.0f - EntityManager::frameTimeSmoothing);
     float animationDeltaTime = std::min(deltaTime, 0.033f);
 
-    // Cleanup TLS animation state periodically
+    // Cleanup TLS animation state periodically (cheap)
     auto currentTime = std::chrono::steady_clock::now();
     static auto lastCleanupTime = std::chrono::steady_clock::now();
     if (std::chrono::duration_cast<std::chrono::seconds>(currentTime - lastCleanupTime).count() >= 5) {
@@ -908,7 +918,7 @@ void ESP::Render(ImDrawList* drawList)
         prevViewMatrix = lastPrevViewMatrix;
     }
 
-    // Local player team
+    // Local player team (first entity if exposed, otherwise 0)
     int localPlayerTeam = 0;
     if (!entitiesRef.empty()) {
         localPlayerTeam = entitiesRef[0].team;
@@ -955,7 +965,7 @@ void ESP::Render(ImDrawList* drawList)
         // Distance (for opacity, optional)
         float distance = std::sqrt(headPos.x * headPos.x + headPos.y * headPos.y + headPos.z * headPos.z);
 
-        // Prediction using snapshot
+        // Prediction using snapshot (cheap and stable)
         if (hasValidHistory) {
             float tDelta = std::chrono::duration<float>(currentTime - snap->lastUpdateTime).count();
             if (tDelta > 0 && tDelta < 0.5f) {
@@ -981,7 +991,6 @@ void ESP::Render(ImDrawList* drawList)
         }
 
         // Coarse world-space culling: skip absurdly far entities to avoid W2S and draw overhead
-        // Adjusted for AssaultCube scale; keeps near to mid-range targets
         const float maxRenderDistance = 5000.0f;
         Vector3 camToHead = entity.headPosition; // assuming camera at origin in world coords space for simple cull
         float distSq = camToHead.x*camToHead.x + camToHead.y*camToHead.y + camToHead.z*camToHead.z;
