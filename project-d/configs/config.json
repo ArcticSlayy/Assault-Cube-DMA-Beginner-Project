@@ -25,7 +25,16 @@
         "Port": 10244,
         "Uuid": "A8F45054"
     },
+    "Ui": {
+        "LastTab": 2
+    },
     "Visuals": {
+        "Accent": [
+            0.0,
+            0.6749982237815857,
+            0.9014778137207031,
+            1.0
+        ],
         "Background": true,
         "Bones": false,
         "BonesColor": [
@@ -64,6 +73,7 @@
             1.0
         ],
         "TeamCheck": false,
+        "VSync": false,
         "VisibleCheck": false,
         "Watermark": true,
         "WatermarkColor": [

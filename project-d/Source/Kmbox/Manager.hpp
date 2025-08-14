@@ -45,10 +45,10 @@ public:
 class KmBoxNetManager
 {
 private:
-    SOCKADDR_IN AddrServer;
-    SOCKET s_Client = 0;
-    client_data ReceiveData;
-    client_data PostData;
+    SOCKADDR_IN AddrServer{};
+    SOCKET s_Client = INVALID_SOCKET;
+    client_data ReceiveData{};
+    client_data PostData{};
 private:
     int NetHandler();
     int SendData(int DataLength);

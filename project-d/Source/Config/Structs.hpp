@@ -43,7 +43,7 @@ namespace Structs
     struct VisualsConfig 
     {
         bool Enabled;
-        bool VSync;
+        bool VSync;                    // vsync toggle
         bool TeamCheck;
         bool VisibleCheck;
 
@@ -55,6 +55,9 @@ namespace Structs
         bool Watermark;
         ImVec4 WatermarkColor;
         WatermarkPosition WatermarkPos = WatermarkPosition::TopRight;
+
+        // Accent color for theming (persisted)
+        ImVec4 Accent = ImVec4(0.22f, 0.40f, 0.80f, 1.00f);
 
         bool Name;
         ImVec4 NameColor;
@@ -70,5 +73,11 @@ namespace Structs
 
         bool Bones;
         ImVec4 BonesColor;
+    };
+
+    // UI state quality-of-life persistence
+    struct UiConfig
+    {
+        int LastTab = 0;
     };
 }

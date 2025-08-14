@@ -31,10 +31,11 @@ ImFont* titleFont = nullptr; // Title font (bold, 19pt)
 ImFont* tabFont = nullptr;   // Tab font (16.5pt)
 ImFont* featureFont = nullptr; // Feature font (15pt)
 ImFont* sectionFont = nullptr; // Slightly larger font for section headers
+static ImVec4 s_LastAppliedAccent = ImVec4(-1, -1, -1, -1);
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 static const ImVec4 blueAccent = ImVec4(0.22f, 0.40f, 0.80f, 1.00f);
-static ImVec4 gAccent = ImVec4(0.22f, 0.40f, 0.80f, 1.00f); // mutable accent
+ImVec4 gAccent = ImVec4(0.22f, 0.40f, 0.80f, 1.00f); // mutable accent (global)
 
 LRESULT CALLBACK window_procedure(HWND window, UINT msg, WPARAM wParam, LPARAM lParam)
 {
@@ -276,7 +277,7 @@ bool Overlay::CreateImGui()
         titleFont = IO.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\TahomaBD.ttf", 35.0f, nullptr, IO.Fonts->GetGlyphRangesDefault());
         tabFont = IO.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\Tahoma.ttf", 20.0f, nullptr, IO.Fonts->GetGlyphRangesDefault());
         featureFont = IO.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\Tahoma.ttf", 18.0f, nullptr, IO.Fonts->GetGlyphRangesDefault());
-        sectionFont = IO.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\Tahoma.ttf", 20.5f, nullptr, IO.Fonts->GetGlyphRangesDefault());
+        sectionFont = IO.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\Tahoma.ttf", 21.0f, nullptr, IO.Fonts->GetGlyphRangesDefault());
         ImFont* MainFont = tabFont;
         IO.FontDefault = MainFont;
         static const ImWchar icon_ranges[] = { 0xf000, 0xf8ff, 0 };
@@ -576,7 +577,13 @@ void Overlay::RenderMenu()
     static float notificationTimer = 0.0f;
     ImGuiStyle& style = ImGui::GetStyle();
     ImGuiIO& io = ImGui::GetIO();
-    StyleMenu(io, style);
+    // Apply style only when accent changes
+    if (s_LastAppliedAccent.x != gAccent.x || s_LastAppliedAccent.y != gAccent.y || s_LastAppliedAccent.z != gAccent.z || s_LastAppliedAccent.w != gAccent.w)
+    {
+        StyleMenu(io, style);
+        s_LastAppliedAccent = gAccent;
+    }
+
     float OverlayFps = ImGui::GetIO().Framerate;
 
     // Toast system (simple)
@@ -751,18 +758,19 @@ void Overlay::RenderMenu()
         ImGui::Separator();
         ImGui::Text("Accent Presets");
         auto applyAccent = [&](ImVec4 c){
-            // Apply to a few key style colors dynamically
-            ImGuiStyle& st = ImGui::GetStyle();
-            st.Colors[ImGuiCol_FrameBgHovered] = c;
-            st.Colors[ImGuiCol_FrameBgActive] = c;
-            st.Colors[ImGuiCol_ButtonHovered] = c;
-            st.Colors[ImGuiCol_ButtonActive] = c;
-            st.Colors[ImGuiCol_HeaderHovered] = c;
-            st.Colors[ImGuiCol_HeaderActive] = c;
-            st.Colors[ImGuiCol_SliderGrab] = c;
-            st.Colors[ImGuiCol_CheckMark] = c;
+             // Apply to a few key style colors dynamically
+             ImGuiStyle& st = ImGui::GetStyle();
+             st.Colors[ImGuiCol_FrameBgHovered] = c;
+             st.Colors[ImGuiCol_FrameBgActive] = c;
+             st.Colors[ImGuiCol_ButtonHovered] = c;
+             st.Colors[ImGuiCol_ButtonActive] = c;
+             st.Colors[ImGuiCol_HeaderHovered] = c;
+             st.Colors[ImGuiCol_HeaderActive] = c;
+             st.Colors[ImGuiCol_SliderGrab] = c;
+             st.Colors[ImGuiCol_CheckMark] = c;
             gAccent = c; // update for custom drawings
-        };
+            config.Visuals.Accent = c; // persist to config and Save will write it
+         };
         if (ImGui::Button("Blue")) applyAccent(ImVec4(0.22f, 0.40f, 0.80f, 1.00f)); ImGui::SameLine();
         if (ImGui::Button("Purple")) applyAccent(ImVec4(0.55f, 0.30f, 0.75f, 1.00f)); ImGui::SameLine();
         if (ImGui::Button("Cyan")) applyAccent(ImVec4(0.20f, 0.70f, 0.80f, 1.00f)); ImGui::SameLine();
@@ -847,6 +855,7 @@ void Overlay::RenderMenu()
             ImGui::SetCursorScreenPos(itemPos);
             if (ImGui::InvisibleButton("##tab", itemSize)) {
                 m_iSelectedPage = i;
+                config.Ui.LastTab = m_iSelectedPage; // persist selection
             }
             ImGui::PopID();
             if (i < m_Tabs.size() - 1) {
@@ -1007,6 +1016,9 @@ void Overlay::RenderMenu()
                     ImGui::PopStyleColor(4);
                     ImGui::PopStyleVar();
                 }
+                // Accent color (live update + persisted)
+                ImAdd::ColorEdit4("Accent", (float*)&config.Visuals.Accent);
+                gAccent = config.Visuals.Accent;
                 ToggleSwitch("Background", &config.Visuals.Background);
                 ImGui::EndGroup();
 
@@ -1150,7 +1162,7 @@ bool Overlay::Create()
     m_Tabs.push_back("Visuals");
     m_Tabs.push_back("Config");
     m_Tabs.push_back("Info");
-    m_iSelectedPage = 0;
+    m_iSelectedPage = std::clamp(config.Ui.LastTab, 0, (int)3);
 
     if (!CreateOverlay())
         return false;

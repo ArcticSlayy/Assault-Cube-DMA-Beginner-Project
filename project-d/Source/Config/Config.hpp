@@ -7,6 +7,7 @@ namespace Config
         Structs::AimConfig Aim;
         Structs::KmboxConfig Kmbox;
         Structs::VisualsConfig Visuals;
+        Structs::UiConfig Ui;
 
         static AppConfig& Get()
         {
@@ -72,6 +73,7 @@ namespace Config
             j["Kmbox"]["Uuid"] = Kmbox.Uuid;
 
             j["Visuals"]["Enabled"] = Visuals.Enabled;
+            j["Visuals"]["VSync"] = Visuals.VSync;
             j["Visuals"]["TeamCheck"] = Visuals.TeamCheck;
             j["Visuals"]["VisibleCheck"] = Visuals.VisibleCheck;
 
@@ -81,6 +83,8 @@ namespace Config
             j["Visuals"]["Watermark"] = Visuals.Watermark;
             j["Visuals"]["WatermarkColor"] = { Visuals.WatermarkColor.x, Visuals.WatermarkColor.y, Visuals.WatermarkColor.z, Visuals.WatermarkColor.w };
             j["Visuals"]["WatermarkPos"] = static_cast<int>(Visuals.WatermarkPos);
+            // Persist accent
+            j["Visuals"]["Accent"] = { Visuals.Accent.x, Visuals.Accent.y, Visuals.Accent.z, Visuals.Accent.w };
 
             j["Visuals"]["Name"] = Visuals.Name;
             j["Visuals"]["NameColor"] = { Visuals.NameColor.x, Visuals.NameColor.y, Visuals.NameColor.z, Visuals.NameColor.w };
@@ -92,6 +96,9 @@ namespace Config
             j["Visuals"]["WeaponColor"] = { Visuals.WeaponColor.x, Visuals.WeaponColor.y, Visuals.WeaponColor.z, Visuals.WeaponColor.w };
             j["Visuals"]["Bones"] = Visuals.Bones;
             j["Visuals"]["BonesColor"] = { Visuals.BonesColor.x, Visuals.BonesColor.y, Visuals.BonesColor.z, Visuals.BonesColor.w };
+
+            // UI state
+            j["Ui"]["LastTab"] = Ui.LastTab;
 
             std::ofstream file(fullPath);
             if (file.is_open())
@@ -156,6 +163,11 @@ namespace Config
                 LoadConfigSection(j, "Aim", Aim);
                 LoadConfigSection(j, "Kmbox", Kmbox);
                 LoadConfigSection(j, "Visuals", Visuals);
+                if (j.contains("Ui")) Ui.LastTab = j["Ui"].value("LastTab", Ui.LastTab);
+
+                // Initialize runtime accent color for the UI
+                extern ImVec4 gAccent;
+                gAccent = Visuals.Accent;
 
                 LOG_INFO("Loaded config from file: {}", filename);
                 return true;
@@ -183,6 +195,9 @@ namespace Config
                             LoadConfigSection(j, "Aim", Aim);
                             LoadConfigSection(j, "Kmbox", Kmbox);
                             LoadConfigSection(j, "Visuals", Visuals);
+                            if (j.contains("Ui")) Ui.LastTab = j["Ui"].value("LastTab", Ui.LastTab);
+                            extern ImVec4 gAccent;
+                            gAccent = Visuals.Accent;
                             LOG_INFO("Loaded config from clipboard");
                             GlobalUnlock(clipboardData);
                             CloseClipboard();
@@ -250,6 +265,7 @@ namespace Config
                 j["Aim"]["AimbotSmooth"] = 0.0f;
 
                 j["Visuals"]["Enabled"] = false;
+                j["Visuals"]["VSync"] = false;
                 j["Visuals"]["TeamCheck"] = false;
                 j["Visuals"]["VisibleCheck"] = false;
 
@@ -259,6 +275,7 @@ namespace Config
                 j["Visuals"]["Watermark"] = false;
                 j["Visuals"]["WatermarkColor"] = { 1.0f, 1.0f, 1.0f, 1.0f };
                 j["Visuals"]["WatermarkPos"] = static_cast<int>(Structs::WatermarkPosition::TopRight);
+                j["Visuals"]["Accent"] = { 0.22f, 0.40f, 0.80f, 1.00f };
 
                 j["Visuals"]["Name"] = false;
                 j["Visuals"]["NameColor"] = { 1.0f, 1.0f, 1.0f, 1.0f };
@@ -270,6 +287,9 @@ namespace Config
                 j["Visuals"]["WeaponColor"] = { 1.0f, 1.0f, 1.0f, 1.0f };
                 j["Visuals"]["Bones"] = false;
                 j["Visuals"]["BonesColor"] = { 1.0f, 1.0f, 1.0f, 1.0f };
+
+                // UI defaults
+                j["Ui"]["LastTab"] = 0;
 
                 file << j.dump(4);  // Write JSON with pretty print
                 file.close();
@@ -318,6 +338,7 @@ namespace Config
                         else if constexpr (std::is_same_v<T, Structs::VisualsConfig>)
                         {
                             if (key == "Enabled") configSection.Enabled = value.get<bool>();
+                            else if (key == "VSync") configSection.VSync = value.get<bool>();
                             else if (key == "TeamCheck") configSection.TeamCheck = value.get<bool>();
                             else if (key == "VisibleCheck") configSection.VisibleCheck = value.get<bool>();
 
@@ -334,6 +355,7 @@ namespace Config
                             else if (key == "Bones") configSection.Bones = value.get<bool>();
 
                             else if (key == "WatermarkColor") configSection.WatermarkColor = ImVec4(value[0].get<float>(), value[1].get<float>(), value[2].get<float>(), value[3].get<float>());
+                            else if (key == "Accent") configSection.Accent = ImVec4(value[0].get<float>(), value[1].get<float>(), value[2].get<float>(), value[3].get<float>());
                             else if (key == "NameColor") configSection.NameColor = ImVec4(value[0].get<float>(), value[1].get<float>(), value[2].get<float>(), value[3].get<float>());
                             else if (key == "BoxColor") configSection.BoxColor = ImVec4(value[0].get<float>(), value[1].get<float>(), value[2].get<float>(), value[3].get<float>());
                             else if (key == "BoxColorVisible") configSection.BoxColorVisible = ImVec4(value[0].get<float>(), value[1].get<float>(), value[2].get<float>(), value[3].get<float>());
