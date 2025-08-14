@@ -873,6 +873,7 @@ void Overlay::RenderMenu()
         else if (m_iSelectedPage == 1) // Visuals
         {
             ImAdd::SeparatorText("Visuals");
+
             ToggleSwitch("Enable", &config.Visuals.Enabled);
             if (config.Visuals.Enabled)
             {
@@ -881,11 +882,27 @@ void Overlay::RenderMenu()
                 ToggleSwitch("Watermark", &config.Visuals.Watermark);
                 if (config.Visuals.Watermark) {
                     ImAdd::ColorEdit4("Watermark Color", (float*)&config.Visuals.WatermarkColor);
+                    // Watermark Position: label on the left, dropdown to the right with higher contrast and aligned vertically
                     const char* positions[] = { "Top Right", "Top Left", "Top Middle", "Bottom Left", "Bottom Right" };
                     int currentPos = static_cast<int>(config.Visuals.WatermarkPos);
-                    if (ImGui::Combo("Position", &currentPos, positions, IM_ARRAYSIZE(positions))) {
+
+                    // Vertically align text with frame height
+                    ImGui::AlignTextToFramePadding();
+                    ImGui::TextUnformatted("Watermark Position");
+                    ImGui::SameLine();
+
+                    // Increase contrast for just this combo
+                    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+                    ImGui::PushStyleColor(ImGuiCol_FrameBg,        ImVec4(0.18f, 0.18f, 0.18f, 1.00f));
+                    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.22f, 0.22f, 0.22f, 1.00f));
+                    ImGui::PushStyleColor(ImGuiCol_FrameBgActive,  ImVec4(0.24f, 0.24f, 0.24f, 1.00f));
+                    ImGui::PushStyleColor(ImGuiCol_Border,         ImVec4(0.22f, 0.40f, 0.80f, 0.60f));
+                    ImGui::SetNextItemWidth(200.0f);
+                    if (ImGui::Combo("##WatermarkPosition", &currentPos, positions, IM_ARRAYSIZE(positions))) {
                         config.Visuals.WatermarkPos = static_cast<Structs::WatermarkPosition>(currentPos);
                     }
+                    ImGui::PopStyleColor(4);
+                    ImGui::PopStyleVar();
                 }
                 ToggleSwitch("Background", &config.Visuals.Background);
                 ImGui::EndGroup();
