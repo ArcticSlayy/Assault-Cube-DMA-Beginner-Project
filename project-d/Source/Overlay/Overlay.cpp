@@ -1002,28 +1002,15 @@ void Overlay::RenderMenu()
         // One panel per tab (no extra outer border). Only inner sections get borders.
         if (m_iSelectedPage == 0) // Aim
         {
-            // Section header (no container border here)
             SectionHeader("Aim", true);
 
-            ImGui::Columns(2, nullptr, false);
-            float yStart = ImGui::GetCursorPosY();
+            // Split Aim into two panes (left: Aimbot, right: Triggerbot)
+            float totalW = ImGui::GetContentRegionAvail().x;
+            float leftW = totalW * 0.5f - 8.0f;
 
-            // Left: Aimbot
-            ImGui::SetCursorPosY(yStart);
-            ImGui::BeginChild("AimbotSection", ImVec2(0, 0), ImGuiChildFlags_Border, ImGuiWindowFlags_MenuBar);
+            ImGui::BeginChild("AimLeft", ImVec2(leftW, 0), false);
             {
-                // Section card background gradient and inner shadow
-                ImDrawList* cdl = ImGui::GetWindowDrawList();
-                ImVec2 p0 = ImGui::GetItemRectMin();
-                ImVec2 p1 = ImGui::GetItemRectMax();
-                ImU32 gTop = ImGui::GetColorU32(ImVec4(1,1,1,0.03f));
-                ImU32 gBot = ImGui::GetColorU32(ImVec4(0,0,0,0.03f));
-                cdl->AddRectFilledMultiColor(p0, p1, gTop, gTop, gBot, gBot);
-                cdl->AddRect(p0 + ImVec2(1,1), p1 - ImVec2(1,1), ImGui::GetColorU32(ImVec4(0,0,0,0.15f)), 10.0f);
-            }
-            if (ImGui::BeginMenuBar()) { ImGui::TextColored(ImVec4(0.85f, 0.86f, 0.88f, 1.0f), "Aimbot"); ImGui::EndMenuBar(); }
-            {
-                // Enable toggle (standalone)
+                SectionHeader("Aimbot", true);
                 ToggleSwitch("Enable", &config.Aim.Aimbot);
                 if (config.Aim.Aimbot)
                 {
@@ -1045,22 +1032,10 @@ void Overlay::RenderMenu()
             }
             ImGui::EndChild();
 
-            ImGui::NextColumn();
-
-            // Right: Triggerbot
-            ImGui::SetCursorPosY(yStart);
-            ImGui::BeginChild("TriggerbotSection", ImVec2(0, 0), ImGuiChildFlags_Border, ImGuiWindowFlags_MenuBar);
+            ImGui::SameLine(0.0f, 14.0f);
+            ImGui::BeginChild("AimRight", ImVec2(0, 0), false);
             {
-                ImDrawList* cdl = ImGui::GetWindowDrawList();
-                ImVec2 p0 = ImGui::GetItemRectMin();
-                ImVec2 p1 = ImGui::GetItemRectMax();
-                ImU32 gTop = ImGui::GetColorU32(ImVec4(1,1,1,0.03f));
-                ImU32 gBot = ImGui::GetColorU32(ImVec4(0,0,0,0.03f));
-                cdl->AddRectFilledMultiColor(p0, p1, gTop, gTop, gBot, gBot);
-                cdl->AddRect(p0 + ImVec2(1,1), p1 - ImVec2(1,1), ImGui::GetColorU32(ImVec4(0,0,0,0.15f)), 10.0f);
-            }
-            if (ImGui::BeginMenuBar()) { ImGui::TextColored(ImVec4(0.85f, 0.86f, 0.88f, 1.0f), "Triggerbot"); ImGui::EndMenuBar(); }
-            {
+                SectionHeader("Triggerbot", true);
                 ToggleSwitch("Enable", &config.Aim.Trigger);
                 if (config.Aim.Trigger)
                 {
@@ -1076,7 +1051,6 @@ void Overlay::RenderMenu()
                 }
             }
             ImGui::EndChild();
-            ImGui::Columns(1);
         }
         else if (m_iSelectedPage == 1) // Visuals
         {

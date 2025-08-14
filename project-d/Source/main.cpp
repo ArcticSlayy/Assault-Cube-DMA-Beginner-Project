@@ -38,6 +38,32 @@ int main()
         if (Kmbox.InitDevice(config.Kmbox.Ip, config.Kmbox.Port, config.Kmbox.Uuid) == 0)
         {
             ProcInfo::KmboxInitialized = true;
+
+            // Demo: move mouse left/up by 100 pixels
+            int moveRc = Kmbox.Mouse.MoveRelative(-100, -100);
+            if (moveRc == 0) LOG_INFO("KMBox: moved mouse by (-100, -100)");
+            else LOG_ERROR("KMBox: MoveRelative failed: {}", moveRc);
+
+            // Start KMBOX input monitor on a local UDP port
+            constexpr WORD kMonitorPort = 23333;
+            int monRc = Kmbox.KeyBoard.StartMonitor(kMonitorPort);
+            if (monRc == 0) LOG_INFO("KMBox monitor started on UDP port {}", kMonitorPort);
+            else LOG_ERROR("KMBox monitor start failed: {}", monRc);
+
+            // Background watcher: log when right mouse button is pressed
+            static std::thread s_kmboxMouseWatch([&]() {
+                bool lastRight = false;
+                while (Globals::Running)
+                {
+                    // Right button bit is 0x02 (consistent with send path)
+                    bool curRight = (Kmbox.KeyBoard.hw_Mouse.buttons & 0x02) != 0;
+                    if (curRight && !lastRight)
+                        LOG_INFO("KMBox: Right mouse button pressed");
+                    lastRight = curRight;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                }
+            });
+            s_kmboxMouseWatch.detach();
         }
         else
         {
