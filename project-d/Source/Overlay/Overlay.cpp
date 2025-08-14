@@ -30,9 +30,11 @@ ImFont* iconFont = nullptr; // Global/static for Overlay.cpp
 ImFont* titleFont = nullptr; // Title font (bold, 19pt)
 ImFont* tabFont = nullptr;   // Tab font (16.5pt)
 ImFont* featureFont = nullptr; // Feature font (15pt)
+ImFont* sectionFont = nullptr; // Slightly larger font for section headers
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 static const ImVec4 blueAccent = ImVec4(0.22f, 0.40f, 0.80f, 1.00f);
+static ImVec4 gAccent = ImVec4(0.22f, 0.40f, 0.80f, 1.00f); // mutable accent
 
 LRESULT CALLBACK window_procedure(HWND window, UINT msg, WPARAM wParam, LPARAM lParam)
 {
@@ -274,6 +276,7 @@ bool Overlay::CreateImGui()
         titleFont = IO.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\TahomaBD.ttf", 35.0f, nullptr, IO.Fonts->GetGlyphRangesDefault());
         tabFont = IO.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\Tahoma.ttf", 20.0f, nullptr, IO.Fonts->GetGlyphRangesDefault());
         featureFont = IO.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\Tahoma.ttf", 18.0f, nullptr, IO.Fonts->GetGlyphRangesDefault());
+        sectionFont = IO.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\Tahoma.ttf", 20.5f, nullptr, IO.Fonts->GetGlyphRangesDefault());
         ImFont* MainFont = tabFont;
         IO.FontDefault = MainFont;
         static const ImWchar icon_ranges[] = { 0xf000, 0xf8ff, 0 };
@@ -509,29 +512,29 @@ void Overlay::StyleMenu(ImGuiIO& IO, ImGuiStyle& style)
     style.Colors[ImGuiCol_PopupBg]            = darkBg;
     style.Colors[ImGuiCol_ScrollbarBg]        = darkBg;
     style.Colors[ImGuiCol_ScrollbarGrab]      = darkBg;
-    style.Colors[ImGuiCol_FrameBgHovered]     = blueAccent;
-    style.Colors[ImGuiCol_FrameBgActive]      = blueAccent;
+    style.Colors[ImGuiCol_FrameBgHovered]     = gAccent;
+    style.Colors[ImGuiCol_FrameBgActive]      = gAccent;
     style.Colors[ImGuiCol_TitleBg]            = darkBg;
     style.Colors[ImGuiCol_TitleBgActive]      = darkBg;
     style.Colors[ImGuiCol_TitleBgCollapsed]   = darkBg;
     style.Colors[ImGuiCol_Border]             = ImVec4(0.18f, 0.19f, 0.22f, 0.60f);
-    style.Colors[ImGuiCol_ButtonHovered]      = blueAccent;
-    style.Colors[ImGuiCol_ButtonActive]       = blueAccent;
-    style.Colors[ImGuiCol_HeaderHovered]      = blueAccent;
-    style.Colors[ImGuiCol_HeaderActive]       = blueAccent;
-    style.Colors[ImGuiCol_SliderGrab]         = blueAccent;
+    style.Colors[ImGuiCol_ButtonHovered]      = gAccent;
+    style.Colors[ImGuiCol_ButtonActive]       = gAccent;
+    style.Colors[ImGuiCol_HeaderHovered]      = gAccent;
+    style.Colors[ImGuiCol_HeaderActive]       = gAccent;
+    style.Colors[ImGuiCol_SliderGrab]         = gAccent;
     style.Colors[ImGuiCol_SliderGrabActive]   = ImVec4(0.32f, 0.50f, 0.90f, 1.00f);
-    style.Colors[ImGuiCol_CheckMark]          = blueAccent;
+    style.Colors[ImGuiCol_CheckMark]          = gAccent;
     style.Colors[ImGuiCol_Text]               = ImVec4(0.95f, 0.96f, 0.98f, 1.00f);
     style.Colors[ImGuiCol_TextDisabled]       = ImVec4(0.60f, 0.62f, 0.65f, 1.00f);
     style.Colors[ImGuiCol_Separator]          = ImVec4(0.18f, 0.19f, 0.22f, 0.60f);
-    style.Colors[ImGuiCol_TabHovered]         = blueAccent;
-    style.Colors[ImGuiCol_TabActive]          = blueAccent;
-    style.Colors[ImGuiCol_TabUnfocusedActive] = blueAccent;
-    style.Colors[ImGuiCol_DragDropTarget]     = blueAccent;
-    style.Colors[ImGuiCol_NavHighlight]       = blueAccent;
-    style.Colors[ImGuiCol_ScrollbarGrabHovered] = blueAccent;
-    style.Colors[ImGuiCol_ScrollbarGrabActive]  = blueAccent;
+    style.Colors[ImGuiCol_TabHovered]         = gAccent;
+    style.Colors[ImGuiCol_TabActive]          = gAccent;
+    style.Colors[ImGuiCol_TabUnfocusedActive] = gAccent;
+    style.Colors[ImGuiCol_DragDropTarget]     = gAccent;
+    style.Colors[ImGuiCol_NavHighlight]       = gAccent;
+    style.Colors[ImGuiCol_ScrollbarGrabHovered] = gAccent;
+    style.Colors[ImGuiCol_ScrollbarGrabActive]  = gAccent;
 
     // Enforce minimum brightness (RGB >= 25/255)
     const float minC = 25.0f / 255.0f;
@@ -557,7 +560,7 @@ bool ToggleSwitch(const char* label, bool* v, float scale = 0.55f)
     if (ImGui::IsItemClicked())
         *v = !*v;
     float t = *v ? 1.0f : 0.0f;
-    ImU32 col_bg = ImGui::GetColorU32(*v ? ImVec4(0.22f, 0.40f, 0.80f, 1.0f) : ImVec4(0.18f, 0.19f, 0.22f, 1.0f));
+    ImU32 col_bg = ImGui::GetColorU32(*v ? ImVec4(gAccent.x, gAccent.y, gAccent.z, 1.0f) : ImVec4(0.18f, 0.19f, 0.22f, 1.0f));
     // Draw label
     draw_list->AddText(p, ImGui::GetColorU32(ImGuiCol_Text), label);
     // Draw toggle
@@ -624,15 +627,35 @@ void Overlay::RenderMenu()
     // --- Gradient Title Bar ---
     ImVec2 winPos = ImGui::GetWindowPos();
     ImVec2 winSize = ImGui::GetWindowSize();
+    // Soft window shadow (fake blur with multiple alpha rects)
+    {
+        ImDrawList* sdl = ImGui::GetForegroundDrawList();
+        ImU32 shadowCol1 = ImGui::GetColorU32(ImVec4(0,0,0,0.12f));
+        ImU32 shadowCol2 = ImGui::GetColorU32(ImVec4(0,0,0,0.08f));
+        ImU32 shadowCol3 = ImGui::GetColorU32(ImVec4(0,0,0,0.05f));
+        ImU32 shadowCol4 = ImGui::GetColorU32(ImVec4(0,0,0,0.03f));
+        float r = 18.0f;
+        sdl->AddRect(winPos + ImVec2(-6, -4), winPos + winSize + ImVec2(6, 10), shadowCol1, r);
+        sdl->AddRect(winPos + ImVec2(-8, -6), winPos + winSize + ImVec2(8, 14), shadowCol2, r);
+        sdl->AddRect(winPos + ImVec2(-10, -8), winPos + winSize + ImVec2(10, 18), shadowCol3, r);
+        sdl->AddRect(winPos + ImVec2(-12, -10), winPos + winSize + ImVec2(12, 22), shadowCol4, r);
+    }
     float textSize = titleFont ? titleFont->FontSize : 35.0f;
     float iconSize = iconFont ? iconFont->FontSize : 28.0f;
     float paddingY = 5.0f; // 5px above and below text
     float titleBarHeight = ImMax(textSize, iconSize) + 2 * paddingY;
     float rounding = 16.0f;
     // Increased contrast but enforce min brightness of RGB(25,25,25)
+    // Darker, less saturated title bar: mostly baseBg with a hint of accent
     const float kMin = 25.0f / 255.0f;
-    ImVec4 leftCol = ImVec4(0.20f, 0.22f, 0.26f, 1.0f); // a bit brighter left
-    ImVec4 rightCol = ImVec4(0.10f, 0.10f, 0.12f, 1.0f); // clamp >= 25/255
+    ImVec4 baseBg = ImGui::GetStyle().Colors[ImGuiCol_WindowBg];
+    // Blend base background with accent so theme affects title bar gradient
+    auto mix = [](const ImVec4& a, const ImVec4& b, float t){ return ImVec4(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t, 1.0f); };
+    ImVec4 leftCol = mix(baseBg, ImVec4(gAccent.x, gAccent.y, gAccent.z, 1.0f), 0.10f);
+    ImVec4 rightCol = mix(baseBg, ImVec4(gAccent.x, gAccent.y, gAccent.z, 1.0f), 0.05f);
+    // Slightly darken both ends
+    leftCol.x *= 0.80f; leftCol.y *= 0.80f; leftCol.z *= 0.80f;
+    rightCol.x *= 0.80f; rightCol.y *= 0.80f; rightCol.z *= 0.80f;
     leftCol.x = ImMax(leftCol.x, kMin); leftCol.y = ImMax(leftCol.y, kMin); leftCol.z = ImMax(leftCol.z, kMin);
     rightCol.x = ImMax(rightCol.x, kMin); rightCol.y = ImMax(rightCol.y, kMin); rightCol.z = ImMax(rightCol.z, kMin);
     ImU32 titleLeft = ImGui::ColorConvertFloat4ToU32(leftCol);
@@ -651,14 +674,16 @@ void Overlay::RenderMenu()
         float underlineH = 2.0f;
         // Base subtle line
         dl->AddRectFilled(ImVec2(winPos.x, underlineY), ImVec2(winPos.x + winSize.x, underlineY + underlineH), ImGui::GetColorU32(ImVec4(0.20f, 0.22f, 0.26f, 1.0f)));
-        // Moving highlight segment
+        // Moving highlight segment with wave parallax on speed
         float t = (float)ImGui::GetTime();
         float segW = 140.0f;
-        float speed = 120.0f; // px/sec
+        float speedBase = 120.0f;
+        float wave = 1.0f + 0.25f * sinf(t * 1.8f);
+        float speed = speedBase * wave; // parallax
         float x = fmodf(t * speed, winSize.x + segW) - segW;
         ImVec2 a = ImVec2(winPos.x + x, underlineY);
         ImVec2 b = ImVec2(winPos.x + x + segW, underlineY + underlineH);
-        dl->AddRectFilled(a, b, ImGui::GetColorU32(ImVec4(0.22f, 0.40f, 0.90f, 0.85f)));
+        dl->AddRectFilled(a, b, ImGui::GetColorU32(ImVec4(gAccent.x, gAccent.y, gAccent.z, 0.85f)));
     }
 
     dl->PopClipRect();
@@ -684,7 +709,7 @@ void Overlay::RenderMenu()
     float startX = centerX;
     ImGui::SetCursorPos(ImVec2(startX, iconY));
     ImGui::PushFont(iconFont);
-    ImGui::TextColored(blueAccent, ICON_FA_MOON);
+    ImGui::TextColored(gAccent, ICON_FA_MOON);
     ImGui::PopFont();
     ImGui::SameLine(0, 18.0f);
     ImGui::SetCursorPos(ImVec2(startX + iconSize + 18.0f, textY));
@@ -702,7 +727,8 @@ void Overlay::RenderMenu()
         ImGui::SetCursorScreenPos(pos);
         ImGui::InvisibleButton(icon, ImVec2(btnSize, btnSize));
         bool hovered = ImGui::IsItemHovered();
-        ImU32 bgCol = hovered ? ImGui::GetColorU32(ImVec4(0.22f, 0.40f, 0.80f, 0.25f)) : ImGui::GetColorU32(ImVec4(0,0,0,0));
+        ImVec4 hoverCol = ImVec4(gAccent.x, gAccent.y, gAccent.z, 0.25f);
+        ImU32 bgCol = hovered ? ImGui::GetColorU32(hoverCol) : ImGui::GetColorU32(ImVec4(0,0,0,0));
         dl->AddRectFilled(pos, pos + ImVec2(btnSize, btnSize), bgCol, 6.0f);
         ImVec2 iconPos = pos + ImVec2((btnSize - (iconFont ? iconFont->FontSize : 18.0f)) * 0.5f, (btnSize - (iconFont ? iconFont->FontSize : 18.0f)) * 0.5f);
         ImGui::PushFont(iconFont);
@@ -721,6 +747,28 @@ void Overlay::RenderMenu()
         ImGui::Separator();
         ImGui::Checkbox("VSync", &config.Visuals.VSync);
         ImGui::Checkbox("Black Background", &config.Visuals.Background);
+        // Theme presets
+        ImGui::Separator();
+        ImGui::Text("Accent Presets");
+        auto applyAccent = [&](ImVec4 c){
+            // Apply to a few key style colors dynamically
+            ImGuiStyle& st = ImGui::GetStyle();
+            st.Colors[ImGuiCol_FrameBgHovered] = c;
+            st.Colors[ImGuiCol_FrameBgActive] = c;
+            st.Colors[ImGuiCol_ButtonHovered] = c;
+            st.Colors[ImGuiCol_ButtonActive] = c;
+            st.Colors[ImGuiCol_HeaderHovered] = c;
+            st.Colors[ImGuiCol_HeaderActive] = c;
+            st.Colors[ImGuiCol_SliderGrab] = c;
+            st.Colors[ImGuiCol_CheckMark] = c;
+            gAccent = c; // update for custom drawings
+        };
+        if (ImGui::Button("Blue")) applyAccent(ImVec4(0.22f, 0.40f, 0.80f, 1.00f)); ImGui::SameLine();
+        if (ImGui::Button("Purple")) applyAccent(ImVec4(0.55f, 0.30f, 0.75f, 1.00f)); ImGui::SameLine();
+        if (ImGui::Button("Cyan")) applyAccent(ImVec4(0.20f, 0.70f, 0.80f, 1.00f)); ImGui::SameLine();
+        if (ImGui::Button("Lime")) applyAccent(ImVec4(0.35f, 0.75f, 0.35f, 1.00f)); ImGui::SameLine();
+        if (ImGui::Button("Orange")) applyAccent(ImVec4(0.90f, 0.55f, 0.25f, 1.00f)); ImGui::SameLine();
+        if (ImGui::Button("Pink")) applyAccent(ImVec4(0.95f, 0.35f, 0.75f, 1.00f));
         ImGui::EndPopup();
     }
 
@@ -772,23 +820,29 @@ void Overlay::RenderMenu()
                 animPillY = animPillY + (targetY - animPillY) * 0.15f; // smooth
                 ImVec2 pillA = ImVec2(itemPos.x + 6.0f, animPillY);
                 ImVec2 pillB = ImVec2(itemPos.x + 10.0f, animPillY + tabHeight - 12.0f);
-                ImGui::GetWindowDrawList()->AddRectFilled(pillA, pillB, ImGui::GetColorU32(blueAccent), 4.0f);
+                ImGui::GetWindowDrawList()->AddRectFilled(pillA, pillB, ImGui::GetColorU32(gAccent), 4.0f);
 
-                // Selected background
-                ImU32 tabLeft = ImGui::ColorConvertFloat4ToU32(ImVec4(0.22f, 0.40f, 0.80f, 0.45f));
-                ImU32 tabRight = ImGui::ColorConvertFloat4ToU32(ImVec4(0.22f, 0.40f, 0.80f, 0.18f));
-                ImGui::GetWindowDrawList()->AddRectFilledMultiColor(itemPos, itemPos + ImVec2(tabWidth, tabHeight), tabLeft, tabRight, tabRight, tabLeft);
-                ImGui::GetWindowDrawList()->AddRect(itemPos, itemPos + ImVec2(tabWidth, tabHeight), ImGui::GetColorU32(ImVec4(0.22f, 0.40f, 0.80f, 0.85f)), 8.0f, 0, 2.0f);
+                // Selected background with subtle inner shadow and gradient
+                ImU32 tabLeftCol = ImGui::ColorConvertFloat4ToU32(ImVec4(gAccent.x, gAccent.y, gAccent.z, 0.45f));
+                ImU32 tabRightCol = ImGui::ColorConvertFloat4ToU32(ImVec4(gAccent.x, gAccent.y, gAccent.z, 0.18f));
+                auto* wdl = ImGui::GetWindowDrawList();
+                wdl->AddRectFilledMultiColor(itemPos, itemPos + ImVec2(tabWidth, tabHeight), tabLeftCol, tabRightCol, tabRightCol, tabLeftCol);
+                wdl->AddRect(itemPos, itemPos + ImVec2(tabWidth, tabHeight), ImGui::GetColorU32(ImVec4(gAccent.x, gAccent.y, gAccent.z, 0.85f)), 8.0f, 0, 2.0f);
+                // Inner shadow
+                ImU32 innerShadow = ImGui::GetColorU32(ImVec4(0,0,0,0.15f));
+                wdl->AddRect(itemPos + ImVec2(1,1), itemPos + ImVec2(tabWidth-1, tabHeight-1), innerShadow, 8.0f, 0, 1.0f);
             }
             float startX = itemPos.x + tabPadding;
             float iconY = itemPos.y + (tabHeight - (iconFont ? iconFont->FontSize : 21.5f)) / 2 + 2.0f;
             float textY = itemPos.y + (tabHeight - (tabFont ? tabFont->FontSize : 16.5f)) / 2;
             float textX = startX + (iconFont ? iconFont->FontSize : 21.5f) + iconTextSpacing;
             ImGui::SetCursorScreenPos(ImVec2(startX, iconY));
-            ImGui::TextColored(selected ? ImVec4(0.22f, 0.40f, 0.80f, 1.0f) : ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "%s", tabIcons[i]);
+            ImGui::PushFont(iconFont);
+            ImGui::TextColored(gAccent, "%s", tabIcons[i]);
+            ImGui::PopFont();
             ImGui::SetCursorScreenPos(ImVec2(textX, textY));
             ImGui::PushFont(tabFont);
-            ImGui::TextColored(selected ? ImVec4(0.95f, 0.96f, 0.98f, 1.0f) : ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "%s", m_Tabs[i]);
+            ImGui::TextColored(selected ? ImVec4(0.95f, 0.96f, 0.98f, 1.00f) : ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "%s", m_Tabs[i]);
             ImGui::PopFont();
             ImGui::SetCursorScreenPos(itemPos);
             if (ImGui::InvisibleButton("##tab", itemSize)) {
@@ -810,11 +864,41 @@ void Overlay::RenderMenu()
     {
         ImGui::PushFont(featureFont);
 
+        // Helper: draw gradient aligned to SeparatorText line, starting to the right of the text (handles centered/left alignment)
+        auto SectionHeader = [&](const char* label, bool large = true)
+         {
+            if (large && sectionFont) ImGui::PushFont(sectionFont);
+            else if (large && tabFont) ImGui::PushFont(tabFont);
+            ImAdd::SeparatorText(label);
+            if (large && (sectionFont || tabFont)) ImGui::PopFont();
+
+              // Align gradient to the center line of SeparatorText item (where the dashes are)
+              ImDrawList* sdl = ImGui::GetWindowDrawList();
+              ImVec2 itemMin = ImGui::GetItemRectMin();
+              ImVec2 itemMax = ImGui::GetItemRectMax();
+             float centerY = itemMin.y + (itemMax.y - itemMin.y) * 0.5f;
+             ImVec2 contentMin = ImGui::GetWindowPos() + ImGui::GetWindowContentRegionMin();
+             ImVec2 contentMax = ImGui::GetWindowPos() + ImGui::GetWindowContentRegionMax();
+             ImGuiStyle& st = ImGui::GetStyle();
+             float text_w = ImGui::CalcTextSize(label).x;
+             float padX = st.SeparatorTextPadding.x;
+             float avail_w = contentMax.x - contentMin.x;
+             float align = st.SeparatorTextAlign.x; // 0.0f=left, 0.5f=center
+             // Compute the starting X of the label according to SeparatorText alignment and padding
+              float label_start_x = contentMin.x + ((avail_w - text_w - padX * 2.0f) * align) + padX;
+             // Start the gradient very close (~1px) to the end of the label
+              float startX = label_start_x + text_w + 1.0f;
+              float h = ImMax(1.0f, st.SeparatorTextBorderSize);
+              ImU32 leftC = ImGui::ColorConvertFloat4ToU32(ImVec4(gAccent.x, gAccent.y, gAccent.z, 1.00f));
+              ImU32 rightC= ImGui::ColorConvertFloat4ToU32(ImVec4(gAccent.x, gAccent.y, gAccent.z, 0.25f));
+              sdl->AddRectFilledMultiColor(ImVec2(startX, centerY - h * 0.5f), ImVec2(contentMax.x, centerY + h * 0.5f), leftC, rightC, rightC, leftC);
+          };
+
         // One panel per tab (no extra outer border). Only inner sections get borders.
         if (m_iSelectedPage == 0) // Aim
         {
             // Section header (no container border here)
-            ImAdd::SeparatorText("Aim");
+            SectionHeader("Aim", true);
 
             ImGui::Columns(2, nullptr, false);
             float yStart = ImGui::GetCursorPosY();
@@ -822,6 +906,16 @@ void Overlay::RenderMenu()
             // Left: Aimbot
             ImGui::SetCursorPosY(yStart);
             ImGui::BeginChild("AimbotSection", ImVec2(0, 0), ImGuiChildFlags_Border, ImGuiWindowFlags_MenuBar);
+            {
+                // Section card background gradient and inner shadow
+                ImDrawList* cdl = ImGui::GetWindowDrawList();
+                ImVec2 p0 = ImGui::GetItemRectMin();
+                ImVec2 p1 = ImGui::GetItemRectMax();
+                ImU32 gTop = ImGui::GetColorU32(ImVec4(1,1,1,0.03f));
+                ImU32 gBot = ImGui::GetColorU32(ImVec4(0,0,0,0.03f));
+                cdl->AddRectFilledMultiColor(p0, p1, gTop, gTop, gBot, gBot);
+                cdl->AddRect(p0 + ImVec2(1,1), p1 - ImVec2(1,1), ImGui::GetColorU32(ImVec4(0,0,0,0.15f)), 10.0f);
+            }
             if (ImGui::BeginMenuBar()) { ImGui::TextColored(ImVec4(0.85f, 0.86f, 0.88f, 1.0f), "Aimbot"); ImGui::EndMenuBar(); }
             {
                 ToggleSwitch("Enable", &config.Aim.Aimbot);
@@ -850,6 +944,15 @@ void Overlay::RenderMenu()
             // Right: Triggerbot
             ImGui::SetCursorPosY(yStart);
             ImGui::BeginChild("TriggerbotSection", ImVec2(0, 0), ImGuiChildFlags_Border, ImGuiWindowFlags_MenuBar);
+            {
+                ImDrawList* cdl = ImGui::GetWindowDrawList();
+                ImVec2 p0 = ImGui::GetItemRectMin();
+                ImVec2 p1 = ImGui::GetItemRectMax();
+                ImU32 gTop = ImGui::GetColorU32(ImVec4(1,1,1,0.03f));
+                ImU32 gBot = ImGui::GetColorU32(ImVec4(0,0,0,0.03f));
+                cdl->AddRectFilledMultiColor(p0, p1, gTop, gTop, gBot, gBot);
+                cdl->AddRect(p0 + ImVec2(1,1), p1 - ImVec2(1,1), ImGui::GetColorU32(ImVec4(0,0,0,0.15f)), 10.0f);
+            }
             if (ImGui::BeginMenuBar()) { ImGui::TextColored(ImVec4(0.85f, 0.86f, 0.88f, 1.0f), "Triggerbot"); ImGui::EndMenuBar(); }
             {
                 ToggleSwitch("Enable", &config.Aim.Trigger);
@@ -872,12 +975,12 @@ void Overlay::RenderMenu()
         }
         else if (m_iSelectedPage == 1) // Visuals
         {
-            ImAdd::SeparatorText("Visuals");
+            SectionHeader("Visuals", true);
 
             ToggleSwitch("Enable", &config.Visuals.Enabled);
             if (config.Visuals.Enabled)
             {
-                ImAdd::SeparatorText("General");
+                SectionHeader("General", true);
                 ImGui::BeginGroup();
                 ToggleSwitch("Watermark", &config.Visuals.Watermark);
                 if (config.Visuals.Watermark) {
@@ -896,7 +999,7 @@ void Overlay::RenderMenu()
                     ImGui::PushStyleColor(ImGuiCol_FrameBg,        ImVec4(0.18f, 0.18f, 0.18f, 1.00f));
                     ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.22f, 0.22f, 0.22f, 1.00f));
                     ImGui::PushStyleColor(ImGuiCol_FrameBgActive,  ImVec4(0.24f, 0.24f, 0.24f, 1.00f));
-                    ImGui::PushStyleColor(ImGuiCol_Border,         ImVec4(0.22f, 0.40f, 0.80f, 0.60f));
+                    ImGui::PushStyleColor(ImGuiCol_Border,         ImVec4(gAccent.x, gAccent.y, gAccent.z, 0.60f));
                     ImGui::SetNextItemWidth(200.0f);
                     if (ImGui::Combo("##WatermarkPosition", &currentPos, positions, IM_ARRAYSIZE(positions))) {
                         config.Visuals.WatermarkPos = static_cast<Structs::WatermarkPosition>(currentPos);
@@ -907,7 +1010,7 @@ void Overlay::RenderMenu()
                 ToggleSwitch("Background", &config.Visuals.Background);
                 ImGui::EndGroup();
 
-                ImAdd::SeparatorText("Visual");
+                SectionHeader("Visual", true);
                 ImGui::BeginGroup();
                 ToggleSwitch("VSync", &config.Visuals.VSync);
                 ToggleSwitch("Team Check", &config.Visuals.TeamCheck);
@@ -917,7 +1020,7 @@ void Overlay::RenderMenu()
                     ImAdd::ColorEdit4("Hitmarker Color", (float*)&config.Visuals.HitmarkerColor);
                 ImGui::EndGroup();
 
-                ImAdd::SeparatorText("Players");
+                SectionHeader("Players", true);
                 ImGui::BeginGroup();
                 ToggleSwitch("Name", &config.Visuals.Name);
                 if (config.Visuals.Name)
@@ -940,7 +1043,7 @@ void Overlay::RenderMenu()
         }
         else if (m_iSelectedPage == 2) // Config
         {
-            ImAdd::SeparatorText("Configs");
+            SectionHeader("Configs", true);
             // Render actual config controls (moved out of inner child)
             static char configName[128] = "";
             static std::vector<std::string> configFiles;
@@ -1016,13 +1119,13 @@ void Overlay::RenderMenu()
         }
         else if (m_iSelectedPage == 3) // Info
         {
-            ImAdd::SeparatorText("Info");
-            ImAdd::SeparatorText("Hardware");
+            SectionHeader("Info", true);
+            SectionHeader("Hardware", true);
             ImGui::Text("DMA:"); ImGui::SameLine(); ImGui::TextColored(ProcInfo::DmaInitialized ? ImVec4(0, 1, 0, 1) : ImVec4(1, 0, 0, 1), "%s", ProcInfo::DmaInitialized ? "Connected" : "Disconnected");
             ImGui::Text("KMBOX:"); ImGui::SameLine(); ImGui::TextColored(ProcInfo::KmboxInitialized ? ImVec4(0, 1, 0, 1) : ImVec4(1, 0, 0, 1), "%s", ProcInfo::KmboxInitialized ? "Connected" : "Disconnected");
-            ImAdd::SeparatorText("Game");
+            SectionHeader("Game", true);
             ImGui::Text("Client:"); ImGui::SameLine(); ImGui::Text("0x%llx", Globals::ClientBase);
-            ImAdd::SeparatorText("Cheat");
+            SectionHeader("Cheat", true);
             ImGui::Text("Overlay FPS: %.2f", OverlayFps);
             float buttonWidth = 100.0f; float buttonSpacing = 20.0f;
             ImGui::SetCursorPosX((ImGui::GetWindowSize().x - 2 * buttonWidth - buttonSpacing) / 2);

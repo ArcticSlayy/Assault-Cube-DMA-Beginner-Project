@@ -1,6 +1,8 @@
 #pragma once
 #include <vector>
 #include <mutex>
+#include <thread>
+#include <chrono>
 #include "Aimbot/Aimbot.hpp"
 #include <SDK.hpp>
 

@@ -9,7 +9,7 @@ int main()
     SetConsoleTitleA("Console - Debug");
     spdlog::set_level(spdlog::level::trace);
 
-    cout << R"(
+    std::cout << R"(
      _______ _______ _______ _______ _______ _______ 
     |\     /|\     /|\     /|\     /|\     /|\     /|
     | +---+ | +---+ | +---+ | +---+ | +---+ | +---+ |
@@ -22,14 +22,14 @@ int main()
     if (!c_exception_handler::setup())
     {
         LOG_ERROR("Failed to setup Exception Handler");
-        this_thread::sleep_for(chrono::seconds(5));
+        std::this_thread::sleep_for(std::chrono::seconds(5));
         return 1;
     }
 
     if (!config.Init())
     {
         LOG_ERROR("Failed to initialize Config");
-        this_thread::sleep_for(chrono::seconds(5));
+        std::this_thread::sleep_for(std::chrono::seconds(5));
         return 1;
     }
 
@@ -54,21 +54,21 @@ int main()
     if (!dma.Init())
     {
         LOG_ERROR("Failed to initialize DMA");
-        this_thread::sleep_for(chrono::seconds(5));
+        std::this_thread::sleep_for(std::chrono::seconds(5));
         return 1;
     }
 
     if (!sdk.Init())
     {
         LOG_ERROR("Failed to initialize SDK");
-        this_thread::sleep_for(chrono::seconds(5));
+        std::this_thread::sleep_for(std::chrono::seconds(5));
         return 1;
     }
 
 	if (!features.Init())
     {
 		LOG_ERROR("Failed to initialize Features");
-		this_thread::sleep_for(chrono::seconds(5));
+		std::this_thread::sleep_for(std::chrono::seconds(5));
 		return 1;
 	}
 
@@ -78,7 +78,7 @@ int main()
     if (!overlay.Create())
     {
 		LOG_ERROR("Failed to create Overlay");
-		this_thread::sleep_for(chrono::seconds(5));
+		std::this_thread::sleep_for(std::chrono::seconds(5));
 		return 1;
 	}
 
