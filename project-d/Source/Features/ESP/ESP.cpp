@@ -918,6 +918,11 @@ void ESP::Render(ImDrawList* drawList)
     int renderedEntities = 0;
     int debugShownCount = 0; // reset every frame
 
+    // Reserve some vertices/indices for expected entities to reduce reallocs when many targets
+    if (entitiesRef.size() > 0) {
+        drawList->ChannelsSplit(2); // Channel 0: geometry; 1: text
+    }
+
     for (size_t ei = 0; ei < entitiesRef.size(); ++ei) {
         const auto& entity = entitiesRef[ei];
         totalEntities++;
@@ -975,6 +980,14 @@ void ESP::Render(ImDrawList* drawList)
             }
         }
 
+        // Coarse world-space culling: skip absurdly far entities to avoid W2S and draw overhead
+        // Adjusted for AssaultCube scale; keeps near to mid-range targets
+        const float maxRenderDistance = 5000.0f;
+        Vector3 camToHead = entity.headPosition; // assuming camera at origin in world coords space for simple cull
+        float distSq = camToHead.x*camToHead.x + camToHead.y*camToHead.y + camToHead.z*camToHead.z;
+        if (distSq > maxRenderDistance * maxRenderDistance)
+            continue;
+
         // Project
         Vector2 headScreenPos, footScreenPos;
         bool headOk = sdk.WorldToScreen(headPos, headScreenPos, viewMatrix, width, height);
@@ -1028,40 +1041,38 @@ void ESP::Render(ImDrawList* drawList)
         float box_x = headScreenPos.x - (box_width / 2.0f);
         float box_y = headScreenPos.y;
 
-        // Box smoothing keyed by stable identity
-        auto& lastBoxWidth = tlsAnimationState.lastBoxWidths[entityKey];
-        auto& lastBoxHeight = tlsAnimationState.lastBoxHeights[entityKey];
-        if (lastBoxWidth <= 0) { lastBoxWidth = box_width; lastBoxHeight = box_height; }
-        float stability = hasValidHistory ? snap->stabilityFactor : 0.5f;
-        float boxSmoothFactor = std::min(0.25f, animationDeltaTime * 7.5f) * (0.5f + stability * 0.5f);
-        const float MAX_SIZE_CHANGE_RATE = 0.12f;
-        float maxWidthDelta = lastBoxWidth * MAX_SIZE_CHANGE_RATE;
-        float maxHeightDelta = lastBoxHeight * MAX_SIZE_CHANGE_RATE;
-        float targetWidth = std::clamp(box_width, lastBoxWidth - maxWidthDelta, lastBoxWidth + maxWidthDelta);
-        float targetHeight = std::clamp(box_height, lastBoxHeight - maxHeightDelta, lastBoxHeight + maxHeightDelta);
-        box_width = lastBoxWidth * (1.0f - boxSmoothFactor) + targetWidth * boxSmoothFactor;
-        box_height = lastBoxHeight * (1.0f - boxSmoothFactor) + targetHeight * boxSmoothFactor;
-        lastBoxWidth = box_width;
-        lastBoxHeight = box_height;
-        box_x = headScreenPos.x - (box_width / 2.0f);
-
-        // Opacity
+        // Opacity based on history confidence and distance
         float opacityBase = hasValidHistory ? std::min(1.0f, snap->positionConfidence) : 0.7f;
         float distanceOpacityFactor = (distance > 2000.0f) ? std::max(0.6f, 1.0f - ((distance - 2000.0f) / 10000.0f)) : 1.0f;
         float opacity = opacityBase * distanceOpacityFactor;
 
-        // Box draw with polish: rounded + outer and inner outlines for depth
+        // LOD thresholds to reduce draw overhead for tiny targets
+        const bool isTiny = (box_height < 12.0f);
+        const bool isSmall = (box_height < 24.0f);
+
+        // Box draw with polish: switch to cheaper variants for small sizes
+        drawList->ChannelsSetCurrent(0);
         if (config.Visuals.Box) {
             float rounding = 2.0f;
             ImU32 boxColor = IM_COL32((int)(config.Visuals.BoxColor.x * 255), (int)(config.Visuals.BoxColor.y * 255), (int)(config.Visuals.BoxColor.z * 255), (int)(config.Visuals.BoxColor.w * 255 * opacity));
-            ImU32 darker = IM_COL32(0, 0, 0, (int)(120 * opacity));
-            // Outer subtle dark outline (glow-like)
-            drawList->AddRect(ImVec2(box_x - 1, box_y - 1), ImVec2(box_x + box_width + 1, box_y + box_height + 1), darker, rounding + 1.0f, 0, 1.0f);
-            // Main box
-            drawList->AddRect(ImVec2(box_x, box_y), ImVec2(box_x + box_width, box_y + box_height), boxColor, rounding, 0, 1.5f);
-            // Inner subtle outline
-            ImU32 inner = IM_COL32(255, 255, 255, (int)(40 * opacity));
-            drawList->AddRect(ImVec2(box_x + 1, box_y + 1), ImVec2(box_x + box_width - 1, box_y + box_height - 1), inner, rounding - 1.0f, 0, 1.0f);
+            if (isTiny) {
+                // Cheapest: single thin rectangle
+                drawList->AddRect(ImVec2(box_x, box_y), ImVec2(box_x + box_width, box_y + box_height), boxColor, 0.0f, 0, 1.0f);
+            } else if (isSmall) {
+                // Slightly better: outer dark + main box
+                ImU32 darker = IM_COL32(0, 0, 0, (int)(100 * opacity));
+                drawList->AddRect(ImVec2(box_x - 1, box_y - 1), ImVec2(box_x + box_width + 1, box_y + box_height + 1), darker, rounding, 0, 1.0f);
+                drawList->AddRect(ImVec2(box_x, box_y), ImVec2(box_x + box_width, box_y + box_height), boxColor, rounding, 0, 1.2f);
+            } else {
+                ImU32 darker = IM_COL32(0, 0, 0, (int)(120 * opacity));
+                // Outer subtle dark outline (glow-like)
+                drawList->AddRect(ImVec2(box_x - 1, box_y - 1), ImVec2(box_x + box_width + 1, box_y + box_height + 1), darker, rounding + 1.0f, 0, 1.0f);
+                // Main box
+                drawList->AddRect(ImVec2(box_x, box_y), ImVec2(box_x + box_width, box_y + box_height), boxColor, rounding, 0, 1.5f);
+                // Inner subtle outline
+                ImU32 inner = IM_COL32(255, 255, 255, (int)(40 * opacity));
+                drawList->AddRect(ImVec2(box_x + 1, box_y + 1), ImVec2(box_x + box_width - 1, box_y + box_height - 1), inner, rounding - 1.0f, 0, 1.0f);
+            }
         }
 
         // Debug visuals (limited count per frame)
@@ -1094,42 +1105,61 @@ void ESP::Render(ImDrawList* drawList)
             float healthChangeSpeed = (animPerc > healthPerc) ? EntityManager::ANIMATION_SPEED_FAST : EntityManager::ANIMATION_SPEED_BASE;
             float frameAdjustedSpeed = healthChangeSpeed * animationDeltaTime;
             animPerc += std::clamp(healthPerc - animPerc, -frameAdjustedSpeed, frameAdjustedSpeed);
-            // Segmented health bar (5 segments with small gaps)
-            int segments = 5;
-            float gap = 1.0f;
-            float segHeight = (hb_height - gap * (segments - 1)) / segments;
-            ImU32 bgColor = IM_COL32(40, 40, 40, (int)(180 * opacity));
-            for (int s = 0; s < segments; ++s) {
-                // From bottom to top
-                float segBottom = hb_y + hb_height - (s + 1) * segHeight - s * gap;
-                float segTop = segBottom + segHeight;
-                // Determine fill amount for this segment
-                float segStartPerc = s / (float)segments;
-                float segEndPerc = (s + 1) / (float)segments;
-                float segFillPerc = 0.0f;
-                float denom = (segEndPerc - segStartPerc);
-                if (denom > 0.0f) segFillPerc = (animPerc - segStartPerc) / denom;
-                if (segFillPerc < 0.0f) segFillPerc = 0.0f;
-                if (segFillPerc > 1.0f) segFillPerc = 1.0f;
-                // Background of segment
-                drawList->AddRectFilled(ImVec2(hb_x, segBottom), ImVec2(hb_x + hb_width, segTop), bgColor, 1.0f);
-                if (segFillPerc > 0.0f) {
-                    // Gradient within segment from green to red following overall position
-                    float overallY0 = (segBottom - hb_y) / hb_height; // 0 at top, 1 at bottom
-                    float overallY1 = (segTop - hb_y) / hb_height;
-                    ImU32 col0 = IM_COL32((int)(255 * (1.0f - overallY0)), (int)(255 * overallY0), 0, (int)(255 * opacity));
-                    ImU32 col1 = IM_COL32((int)(255 * (1.0f - overallY1)), (int)(255 * overallY1), 0, (int)(255 * opacity));
-                    float filledHeight = segFillPerc * segHeight;
-                    drawList->AddRectFilledMultiColor(ImVec2(hb_x, segTop - filledHeight), ImVec2(hb_x + hb_width, segTop), col0, col0, col1, col1);
+            if (isTiny) {
+                // Cheapest: simple solid bar with no outline/segments
+                float filled = hb_height * animPerc;
+                ImU32 colTop = IM_COL32(0, 255, 0, (int)(220 * opacity));
+                ImU32 colBot = IM_COL32(255, 0, 0, (int)(220 * opacity));
+                // Linear blend by percentage
+                auto lerp = [](ImU32 a, ImU32 b, float t) {
+                    int ar = (a >> 0) & 0xFF, ag = (a >> 8) & 0xFF, ab = (a >> 16) & 0xFF, aa = (a >> 24) & 0xFF;
+                    int br = (b >> 0) & 0xFF, bg = (b >> 8) & 0xFF, bb = (b >> 16) & 0xFF, ba = (b >> 24) & 0xFF;
+                    int rr = (int)(ar + (br - ar) * t);
+                    int gg = (int)(ag + (bg - ag) * t);
+                    int bb2= (int)(ab + (bb - ab) * t);
+                    int aa2= (int)(aa + (ba - aa) * t);
+                    return IM_COL32(rr, gg, bb2, aa2);
+                };
+                ImU32 col = lerp(colBot, colTop, animPerc);
+                drawList->AddRectFilled(ImVec2(hb_x, hb_y + (hb_height - filled)), ImVec2(hb_x + hb_width, hb_y + hb_height), col, 1.0f);
+            } else {
+                // Segmented health bar (5 segments with small gaps)
+                int segments = 5;
+                float gap = 1.0f;
+                float segHeight = (hb_height - gap * (segments - 1)) / segments;
+                ImU32 bgColor = IM_COL32(40, 40, 40, (int)(180 * opacity));
+                for (int s = 0; s < segments; ++s) {
+                    // From bottom to top
+                    float segBottom = hb_y + hb_height - (s + 1) * segHeight - s * gap;
+                    float segTop = segBottom + segHeight;
+                    // Determine fill amount for this segment
+                    float segStartPerc = s / (float)segments;
+                    float segEndPerc = (s + 1) / (float)segments;
+                    float segFillPerc = 0.0f;
+                    float denom = (segEndPerc - segStartPerc);
+                    if (denom > 0.0f) segFillPerc = (animPerc - segStartPerc) / denom;
+                    if (segFillPerc < 0.0f) segFillPerc = 0.0f;
+                    if (segFillPerc > 1.0f) segFillPerc = 1.0f;
+                    // Background of segment
+                    drawList->AddRectFilled(ImVec2(hb_x, segBottom), ImVec2(hb_x + hb_width, segTop), bgColor, 1.0f);
+                    if (segFillPerc > 0.0f) {
+                        // Gradient within segment from green to red following overall position
+                        float overallY0 = (segBottom - hb_y) / hb_height; // 0 at top, 1 at bottom
+                        float overallY1 = (segTop - hb_y) / hb_height;
+                        ImU32 col0 = IM_COL32((int)(255 * (1.0f - overallY0)), (int)(255 * overallY0), 0, (int)(255 * opacity));
+                        ImU32 col1 = IM_COL32((int)(255 * (1.0f - overallY1)), (int)(255 * overallY1), 0, (int)(255 * opacity));
+                        float filledHeight = segFillPerc * segHeight;
+                        drawList->AddRectFilledMultiColor(ImVec2(hb_x, segTop - filledHeight), ImVec2(hb_x + hb_width, segTop), col0, col0, col1, col1);
+                    }
                 }
+                // Outline whole bar
+                drawList->AddRect(ImVec2(hb_x - 1, hb_y - 1), ImVec2(hb_x + hb_width + 1, hb_y + hb_height + 1), IM_COL32(0,0,0,(int)(200 * opacity)), 2.0f);
             }
-            // Outline whole bar
-            drawList->AddRect(ImVec2(hb_x - 1, hb_y - 1), ImVec2(hb_x + hb_width + 1, hb_y + hb_height + 1), IM_COL32(0,0,0,(int)(200 * opacity)), 2.0f);
         }
 
         // Name
         float textY = box_y - 4;
-        if (config.Visuals.Name) {
+        if (config.Visuals.Name && !isSmall) {
             ImU32 nameColor = IM_COL32((int)(config.Visuals.NameColor.x * 255), (int)(config.Visuals.NameColor.y * 255), (int)(config.Visuals.NameColor.z * 255), (int)(config.Visuals.NameColor.w * 255 * opacity));
             ImVec2 textSize = ImGui::CalcTextSize(entity.name.c_str());
             ImVec2 namePos(box_x + (box_width - textSize.x) / 2.0f, textY - textSize.y);
@@ -1141,7 +1171,7 @@ void ESP::Render(ImDrawList* drawList)
         }
 
         // Weapon
-        if (config.Visuals.Weapon && !entity.weaponName.empty()) {
+        if (config.Visuals.Weapon && !entity.weaponName.empty() && !isSmall) {
             ImU32 weaponColor = IM_COL32((int)(config.Visuals.WeaponColor.x * 255), (int)(config.Visuals.WeaponColor.y * 255), (int)(config.Visuals.WeaponColor.z * 255), (int)(config.Visuals.WeaponColor.w * 255 * opacity));
             ImVec2 weaponTextSize = ImGui::CalcTextSize(entity.weaponName.c_str());
             ImVec2 weaponPos(box_x + (box_width - weaponTextSize.x) / 2.0f, box_y + box_height + 2.0f);
@@ -1153,6 +1183,8 @@ void ESP::Render(ImDrawList* drawList)
 
         renderedEntities++;
     }
+
+    drawList->ChannelsMerge();
 
     auto end = std::chrono::steady_clock::now();
     float renderTimeMs = std::chrono::duration<float, std::milli>(end - frameStart).count();

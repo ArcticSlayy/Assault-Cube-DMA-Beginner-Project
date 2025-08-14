@@ -37,6 +37,84 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 static const ImVec4 blueAccent = ImVec4(0.22f, 0.40f, 0.80f, 1.00f);
 ImVec4 gAccent = ImVec4(0.22f, 0.40f, 0.80f, 1.00f); // mutable accent (global)
 
+static void HelpMarker(const char* desc)
+{
+    ImGui::SameLine();
+    ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered())
+    {
+        ImGui::BeginTooltip();
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+        ImGui::TextUnformatted(desc);
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
+    }
+}
+
+// Help marker centered vertically to the last item's height, to be called right after the item
+static void HelpMarkerCentered(const char* desc)
+{
+    // Default inline help marker (legacy). Kept for non-row cases.
+    ImGui::SameLine();
+    ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered())
+    {
+        ImGui::BeginTooltip();
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+        ImGui::TextUnformatted(desc);
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
+    }
+}
+
+// Property row: left label column aligned, value control aligned to a fixed X, help marker on far right (no overlap)
+template<typename Fn>
+static void PropertyRow(const char* label, Fn drawer, const char* help = nullptr)
+{
+    ImGuiStyle& st = ImGui::GetStyle();
+    const float labelWidth = 260.0f; // left column width for better readability
+    const float gap = st.ItemInnerSpacing.x + 8.0f; // spacing between label and control
+
+    float localMinX = ImGui::GetWindowContentRegionMin().x;
+    float localMaxX = ImGui::GetWindowContentRegionMax().x;
+    float valueX = localMinX + labelWidth + gap;
+    float availW = ImMax(0.0f, localMaxX - valueX - 28.0f); // reserve space for help marker and padding
+
+    // Label (left)
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(label);
+
+    // Control (aligned to same X)
+    ImGui::SameLine(0.0f, 0.0f);
+    ImGui::SetCursorPosX(valueX);
+    ImGui::SetNextItemWidth(availW);
+    drawer();
+
+    // Insert help marker just before the control boundary to avoid overlap, vertically centered to control
+    if (help)
+    {
+        ImVec2 ctlMin = ImGui::GetItemRectMin();
+        ImVec2 ctlMax = ImGui::GetItemRectMax();
+        float markerH = ImGui::GetTextLineHeight();
+        float y = ctlMin.y + (ctlMax.y - ctlMin.y - markerH) * 0.5f;
+        float markerW = ImGui::CalcTextSize("(?)").x;
+        float x = ctlMin.x - markerW - 6.0f;
+        ImGui::SetCursorScreenPos(ImVec2(x, y));
+        ImGui::TextDisabled("(?)");
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::BeginTooltip();
+            ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+            ImGui::TextUnformatted(help);
+            ImGui::PopTextWrapPos();
+            ImGui::EndTooltip();
+        }
+    }
+
+    // Row spacing
+    ImGui::Dummy(ImVec2(0.0f, st.ItemSpacing.y * 0.5f));
+}
+
 LRESULT CALLBACK window_procedure(HWND window, UINT msg, WPARAM wParam, LPARAM lParam)
 {
 	if (ImGui_ImplWin32_WndProcHandler(window, msg, wParam, lParam))
@@ -277,7 +355,7 @@ bool Overlay::CreateImGui()
         titleFont = IO.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\TahomaBD.ttf", 35.0f, nullptr, IO.Fonts->GetGlyphRangesDefault());
         tabFont = IO.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\Tahoma.ttf", 20.0f, nullptr, IO.Fonts->GetGlyphRangesDefault());
         featureFont = IO.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\Tahoma.ttf", 18.0f, nullptr, IO.Fonts->GetGlyphRangesDefault());
-        sectionFont = IO.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\Tahoma.ttf", 21.0f, nullptr, IO.Fonts->GetGlyphRangesDefault());
+        sectionFont = IO.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\Tahoma.ttf", 22.0f, nullptr, IO.Fonts->GetGlyphRangesDefault());
         ImFont* MainFont = tabFont;
         IO.FontDefault = MainFont;
         static const ImWchar icon_ranges[] = { 0xf000, 0xf8ff, 0 };
@@ -571,6 +649,24 @@ bool ToggleSwitch(const char* label, bool* v, float scale = 0.55f)
     return *v;
 }
 
+// Toggle switch without drawing a label (for use inside property tables)
+static bool ToggleSwitchNoLabel(const char* id, bool* v, float scale = 0.55f)
+{
+    ImGuiStyle& style = ImGui::GetStyle();
+    float height = ImGui::GetFrameHeight() * scale;
+    float width = height * 1.6f;
+    ImVec2 p = ImGui::GetCursorScreenPos();
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    ImGui::InvisibleButton(id, ImVec2(width, height));
+    if (ImGui::IsItemClicked())
+        *v = !*v;
+    float t = *v ? 1.0f : 0.0f;
+    ImU32 col_bg = ImGui::GetColorU32(*v ? ImVec4(gAccent.x, gAccent.y, gAccent.z, 1.0f) : ImVec4(0.18f, 0.19f, 0.22f, 1.0f));
+    draw_list->AddRectFilled(p, p + ImVec2(width, height), col_bg, height * 0.5f);
+    draw_list->AddCircleFilled(p + ImVec2(height * 0.5f + t * (width - height), height * 0.5f), height * 0.4f, ImGui::GetColorU32(ImVec4(0.95f, 0.96f, 0.98f, 1.0f)));
+    return *v;
+}
+
 void Overlay::RenderMenu()
 {
     static std::string configNotification;
@@ -628,7 +724,7 @@ void Overlay::RenderMenu()
     }
 #endif
 
-    ImGui::SetNextWindowSize(ImVec2(1100, 750), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(1220, 750), ImGuiCond_Always);
     ImGui::Begin("Aetherial", &shouldRenderMenu, ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
     // --- Gradient Title Bar ---
@@ -927,18 +1023,19 @@ void Overlay::RenderMenu()
             }
             if (ImGui::BeginMenuBar()) { ImGui::TextColored(ImVec4(0.85f, 0.86f, 0.88f, 1.0f), "Aimbot"); ImGui::EndMenuBar(); }
             {
+                // Enable toggle (standalone)
                 ToggleSwitch("Enable", &config.Aim.Aimbot);
                 if (config.Aim.Aimbot)
                 {
                     if (ProcInfo::KmboxInitialized)
                     {
-                        ToggleSwitch("Draw FOV", &config.Aim.DrawFov);
-                        ToggleSwitch("Aim Visible", &config.Aim.AimVisible);
-                        ToggleSwitch("Aim Teammates", &config.Aim.AimFriendly);
-                        ImAdd::KeyBindOptions KeyMode = (ImAdd::KeyBindOptions)config.Aim.AimbotKeyMode;
-                        ImAdd::KeyBind("Aimbot Key", &config.Aim.AimbotKey, 0, &KeyMode);
-                        ImAdd::SliderFloat("Aimbot Fov", &config.Aim.AimbotFov, 0.0f, 180.0f);
-                        ImAdd::SliderFloat("Aimbot Smooth", &config.Aim.AimbotSmooth, 0.0f, 100.0f);
+                        PropertyRow("Draw FOV", [&]{ ToggleSwitchNoLabel("##DrawFov", &config.Aim.DrawFov); }, "Draw circle representing aimbot FOV on screen");
+                        PropertyRow("FOV Color", [&]{ ImAdd::ColorEdit4("##FovColor", (float*)&config.Aim.AimbotFovColor); });
+                        PropertyRow("Aim Visible", [&]{ ToggleSwitchNoLabel("##AimVisible", &config.Aim.AimVisible); });
+                        PropertyRow("Aim Teammates", [&]{ ToggleSwitchNoLabel("##AimFriendly", &config.Aim.AimFriendly); });
+                        PropertyRow("Aimbot Key", [&]{ ImAdd::KeyBindOptions KeyMode = (ImAdd::KeyBindOptions)config.Aim.AimbotKeyMode; ImAdd::KeyBind("##AimbotKey", &config.Aim.AimbotKey, 0, &KeyMode); config.Aim.AimbotKeyMode = (int)KeyMode; });
+                        PropertyRow("Aimbot FOV", [&]{ ImAdd::SliderFloat("##AimbotFov", &config.Aim.AimbotFov, 0.0f, 180.0f); }, "Maximum angle in degrees from crosshair to target to allow aimbot");
+                        PropertyRow("Aimbot Smooth", [&]{ ImAdd::SliderFloat("##AimbotSmooth", &config.Aim.AimbotSmooth, 0.0f, 100.0f); }, "Higher = slower aiming for more human-like behavior");
                     }
                     else
                     {
@@ -969,9 +1066,8 @@ void Overlay::RenderMenu()
                 {
                     if (ProcInfo::KmboxInitialized)
                     {
-                        ImAdd::KeyBindOptions KeyMode = (ImAdd::KeyBindOptions)config.Aim.TriggerKeyMode;
-                        ImAdd::KeyBind("Trigger Key", &config.Aim.TriggerKey, 0, &KeyMode);
-                        ImAdd::SliderInt("Trigger Delay (ms)", &config.Aim.TriggerDelay, 0, 250);
+                        PropertyRow("Trigger Key", [&]{ ImAdd::KeyBindOptions KeyMode = (ImAdd::KeyBindOptions)config.Aim.TriggerKeyMode; ImAdd::KeyBind("##TriggerKey", &config.Aim.TriggerKey, 0, &KeyMode); config.Aim.TriggerKeyMode = (int)KeyMode; });
+                        PropertyRow("Trigger Delay (ms)", [&]{ ImAdd::SliderInt("##TriggerDelay", &config.Aim.TriggerDelay, 0, 250); });
                     }
                     else
                     {
@@ -989,72 +1085,76 @@ void Overlay::RenderMenu()
             ToggleSwitch("Enable", &config.Visuals.Enabled);
             if (config.Visuals.Enabled)
             {
-                SectionHeader("General", true);
-                ImGui::BeginGroup();
-                ToggleSwitch("Watermark", &config.Visuals.Watermark);
-                if (config.Visuals.Watermark) {
-                    ImAdd::ColorEdit4("Watermark Color", (float*)&config.Visuals.WatermarkColor);
-                    // Watermark Position: label on the left, dropdown to the right with higher contrast and aligned vertically
-                    const char* positions[] = { "Top Right", "Top Left", "Top Middle", "Bottom Left", "Bottom Right" };
-                    int currentPos = static_cast<int>(config.Visuals.WatermarkPos);
-
-                    // Vertically align text with frame height
-                    ImGui::AlignTextToFramePadding();
-                    ImGui::TextUnformatted("Watermark Position");
-                    ImGui::SameLine();
-
-                    // Increase contrast for just this combo
-                    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
-                    ImGui::PushStyleColor(ImGuiCol_FrameBg,        ImVec4(0.18f, 0.18f, 0.18f, 1.00f));
-                    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.22f, 0.22f, 0.22f, 1.00f));
-                    ImGui::PushStyleColor(ImGuiCol_FrameBgActive,  ImVec4(0.24f, 0.24f, 0.24f, 1.00f));
-                    ImGui::PushStyleColor(ImGuiCol_Border,         ImVec4(gAccent.x, gAccent.y, gAccent.z, 0.60f));
-                    ImGui::SetNextItemWidth(200.0f);
-                    if (ImGui::Combo("##WatermarkPosition", &currentPos, positions, IM_ARRAYSIZE(positions))) {
-                        config.Visuals.WatermarkPos = static_cast<Structs::WatermarkPosition>(currentPos);
-                    }
-                    ImGui::PopStyleColor(4);
-                    ImGui::PopStyleVar();
-                }
-                // Accent color (live update + persisted)
-                ImAdd::ColorEdit4("Accent", (float*)&config.Visuals.Accent);
-                gAccent = config.Visuals.Accent;
-                ToggleSwitch("Background", &config.Visuals.Background);
-                ImGui::EndGroup();
-
-                SectionHeader("Visual", true);
-                ImGui::BeginGroup();
-                ToggleSwitch("VSync", &config.Visuals.VSync);
-                ToggleSwitch("Team Check", &config.Visuals.TeamCheck);
-                ToggleSwitch("Visible Check", &config.Visuals.VisibleCheck);
-                ToggleSwitch("Hitmarker", &config.Visuals.Hitmarker);
-                if (config.Visuals.Hitmarker)
-                    ImAdd::ColorEdit4("Hitmarker Color", (float*)&config.Visuals.HitmarkerColor);
-                ImGui::EndGroup();
-
-                SectionHeader("Players", true);
-                ImGui::BeginGroup();
-                ToggleSwitch("Name", &config.Visuals.Name);
-                if (config.Visuals.Name)
-                    ImAdd::ColorEdit4("Name Color", (float*)&config.Visuals.NameColor);
-                ToggleSwitch("Health", &config.Visuals.Health);
-                ToggleSwitch("Box", &config.Visuals.Box);
-                if (config.Visuals.Box)
+                // Split visuals into two panes to reduce vertical size
+                float totalW = ImGui::GetContentRegionAvail().x;
+                float leftW = totalW * 0.5f - 8.0f;
+                ImGui::BeginChild("VisualsLeft", ImVec2(leftW, 0), false);
                 {
-                    ImAdd::ColorEdit4("Box Color", (float*)&config.Visuals.BoxColor);
-                    ImAdd::ColorEdit4("Box Color Visible", (float*)&config.Visuals.BoxColorVisible);
+                    SectionHeader("General", true);
+                    PropertyRow("Watermark", [&]{ ToggleSwitchNoLabel("##Watermark", &config.Visuals.Watermark); });
+                    if (config.Visuals.Watermark) {
+                        PropertyRow("Watermark Color", [&]{ ImAdd::ColorEdit4("##WatermarkColor", (float*)&config.Visuals.WatermarkColor); });
+                        PropertyRow("Watermark Position", [&]{
+                            const char* positions[] = { "Top Right", "Top Left", "Top Middle", "Bottom Left", "Bottom Right" };
+                            int currentPos = static_cast<int>(config.Visuals.WatermarkPos);
+                            // Style tweaks
+                            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+                            ImGui::PushStyleColor(ImGuiCol_FrameBg,        ImVec4(0.18f, 0.18f, 0.18f, 1.00f));
+                            ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.22f, 0.22f, 0.22f, 1.00f));
+                            ImGui::PushStyleColor(ImGuiCol_FrameBgActive,  ImVec4(0.24f, 0.24f, 0.24f, 1.00f));
+                            ImGui::PushStyleColor(ImGuiCol_Border,         ImVec4(gAccent.x, gAccent.y, gAccent.z, 0.60f));
+                            // Constrain popup within this child width and align left
+                            float avail = ImGui::GetContentRegionAvail().x;
+                            ImGui::SetNextWindowSizeConstraints(ImVec2(150.0f, 0.0f), ImVec2(ImMax(150.0f, avail), 300.0f));
+                            if (ImGui::BeginCombo("##WatermarkPosition", positions[currentPos], ImGuiComboFlags_PopupAlignLeft)) {
+                                for (int i = 0; i < IM_ARRAYSIZE(positions); ++i) {
+                                    bool selected = (currentPos == i);
+                                    if (ImGui::Selectable(positions[i], selected)) {
+                                        currentPos = i;
+                                        config.Visuals.WatermarkPos = static_cast<Structs::WatermarkPosition>(currentPos);
+                                    }
+                                    if (selected)
+                                        ImGui::SetItemDefaultFocus();
+                                }
+                                ImGui::EndCombo();
+                            }
+                            ImGui::PopStyleColor(4);
+                            ImGui::PopStyleVar();
+                        });
+                    }
+                    PropertyRow("Accent", [&]{ ImAdd::ColorEdit4("##Accent", (float*)&config.Visuals.Accent); gAccent = config.Visuals.Accent; });
+                    PropertyRow("Background", [&]{ ToggleSwitchNoLabel("##Background", &config.Visuals.Background); });
                 }
-                ToggleSwitch("Weapon", &config.Visuals.Weapon);
-                if (config.Visuals.Weapon)
-                    ImAdd::ColorEdit4("Weapon Color", (float*)&config.Visuals.WeaponColor);
-                ToggleSwitch("Bones", &config.Visuals.Bones);
-                if (config.Visuals.Bones)
-                    ImAdd::ColorEdit4("Bones Color", (float*)&config.Visuals.BonesColor);
-                ImGui::EndGroup();
+                ImGui::EndChild();
+
+                ImGui::SameLine(0.0f, 14.0f);
+                ImGui::BeginChild("VisualsRight", ImVec2(0, 0), false);
+                {
+                    SectionHeader("Players", true);
+                    PropertyRow("Name", [&]{ ToggleSwitchNoLabel("##Name", &config.Visuals.Name); });
+                    if (config.Visuals.Name) {
+                        PropertyRow("Name Color", [&]{ ImAdd::ColorEdit4("##NameColor", (float*)&config.Visuals.NameColor); });
+                    }
+                    PropertyRow("Health", [&]{ ToggleSwitchNoLabel("##Health", &config.Visuals.Health); });
+                    PropertyRow("Box", [&]{ ToggleSwitchNoLabel("##Box", &config.Visuals.Box); });
+                    if (config.Visuals.Box) {
+                        PropertyRow("Box Color", [&]{ ImAdd::ColorEdit4("##BoxColor", (float*)&config.Visuals.BoxColor); });
+                        PropertyRow("Box Color Visible", [&]{ ImAdd::ColorEdit4("##BoxColorVisible", (float*)&config.Visuals.BoxColorVisible); });
+                    }
+                    PropertyRow("Weapon", [&]{ ToggleSwitchNoLabel("##Weapon", &config.Visuals.Weapon); });
+                    if (config.Visuals.Weapon) {
+                        PropertyRow("Weapon Color", [&]{ ImAdd::ColorEdit4("##WeaponColor", (float*)&config.Visuals.WeaponColor); });
+                    }
+                    PropertyRow("Bones", [&]{ ToggleSwitchNoLabel("##Bones", &config.Visuals.Bones); });
+                    if (config.Visuals.Bones) {
+                        PropertyRow("Bones Color", [&]{ ImAdd::ColorEdit4("##BonesColor", (float*)&config.Visuals.BonesColor); });
+                    }
+                }
+                ImGui::EndChild();
             }
-        }
-        else if (m_iSelectedPage == 2) // Config
-        {
+         }
+         else if (m_iSelectedPage == 2) // Config
+         {
             SectionHeader("Configs", true);
             // Render actual config controls (moved out of inner child)
             static char configName[128] = "";
@@ -1139,11 +1239,17 @@ void Overlay::RenderMenu()
             ImGui::Text("Client:"); ImGui::SameLine(); ImGui::Text("0x%llx", Globals::ClientBase);
             SectionHeader("Cheat", true);
             ImGui::Text("Overlay FPS: %.2f", OverlayFps);
-            float buttonWidth = 100.0f; float buttonSpacing = 20.0f;
-            ImGui::SetCursorPosX((ImGui::GetWindowSize().x - 2 * buttonWidth - buttonSpacing) / 2);
-            if (ImAdd::Button("Open folder", ImVec2(buttonWidth, 0))) { ShellExecuteA(nullptr, "open", "explorer.exe", ".\\", nullptr, SW_SHOW); }
-            ImGui::SameLine();
-            if (ImAdd::Button("Unload", ImVec2(buttonWidth, 0))) { Globals::Running = false; shouldRun = false; ExitProcess(0); }
+            // Small FPS sparkline
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0,0,0,0));
+            ImGui::PlotLines("", fpsHistory.data(), (int)fpsHistory.size(), fpsIndex, nullptr, 0.0f, 240.0f, ImVec2(-1, 60.0f));
+            ImGui::PopStyleColor();
+            ImGui::PopStyleVar();
+             float buttonWidth = 100.0f; float buttonSpacing = 20.0f;
+             ImGui::SetCursorPosX((ImGui::GetWindowSize().x - 2 * buttonWidth - buttonSpacing) / 2);
+             if (ImAdd::Button("Open folder", ImVec2(buttonWidth, 0))) { ShellExecuteA(nullptr, "open", "explorer.exe", ".\\", nullptr, SW_SHOW); }
+             ImGui::SameLine();
+             if (ImAdd::Button("Unload", ImVec2(buttonWidth, 0))) { Globals::Running = false; shouldRun = false; ExitProcess(0); }
         }
 
         ImGui::PopFont();

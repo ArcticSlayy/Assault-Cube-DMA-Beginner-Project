@@ -21,6 +21,12 @@ public:
     int Right(bool Down);
     // Middle button
     int Middle(bool Down);
+
+    // Convenience wrappers
+    int ClickLeft() { int r = Left(true); Sleep(1); return r == 0 ? Left(false) : r; }
+    int ClickRight() { int r = Right(true); Sleep(1); return r == 0 ? Right(false) : r; }
+    int MoveTo(int x, int y) { return Move(x, y); }
+    int MoveBy(int dx, int dy) { return MoveRelative(dx, dy); }
 };
 
 class KmBoxKeyBoard
@@ -49,6 +55,7 @@ private:
     SOCKET s_Client = INVALID_SOCKET;
     client_data ReceiveData{};
     client_data PostData{};
+    bool m_WsaStarted = false;
 private:
     int NetHandler();
     int SendData(int DataLength);

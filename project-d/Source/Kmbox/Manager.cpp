@@ -13,7 +13,11 @@ KmBoxNetManager::~KmBoxNetManager()
         closesocket(s_Client);
         s_Client = INVALID_SOCKET;
     }
-    WSACleanup();
+    if (m_WsaStarted)
+    {
+        WSACleanup();
+        m_WsaStarted = false;
+    }
 }
 
 static bool SetSocketTimeouts(SOCKET s, int ms)
@@ -29,6 +33,7 @@ int KmBoxNetManager::InitDevice(const string& IP, WORD Port, const string& Mac)
     WSADATA wsaData{};
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
         return err_creat_socket;
+    m_WsaStarted = true;
 
     // UDP socket
     s_Client = socket(AF_INET, SOCK_DGRAM, 0);
@@ -55,16 +60,24 @@ int KmBoxNetManager::InitDevice(const string& IP, WORD Port, const string& Mac)
     PostData.head.indexpts = 0;
     PostData.head.cmd = cmd_connect;
 
-    int status = sendto(s_Client, reinterpret_cast<const char*>(&PostData), sizeof(cmd_head_t), 0,
-        reinterpret_cast<sockaddr*>(&AddrServer), sizeof(AddrServer));
-    if (status == SOCKET_ERROR)
-        return err_creat_socket;
+    // Try a couple of times in case device is waking
+    int attempts = 2;
+    int status = SOCKET_ERROR;
+    while (attempts-- > 0)
+    {
+        status = sendto(s_Client, reinterpret_cast<const char*>(&PostData), sizeof(cmd_head_t), 0,
+            reinterpret_cast<sockaddr*>(&AddrServer), sizeof(AddrServer));
+        if (status == SOCKET_ERROR)
+            continue;
 
-    this_thread::sleep_for(chrono::milliseconds(20));
-
-    int fromLen = sizeof(AddrServer);
-    status = recvfrom(s_Client, reinterpret_cast<char*>(&ReceiveData), kRxBufferBytes, 0,
-        reinterpret_cast<sockaddr*>(&AddrServer), &fromLen);
+        this_thread::sleep_for(chrono::milliseconds(20));
+        int fromLen = sizeof(AddrServer);
+        status = recvfrom(s_Client, reinterpret_cast<char*>(&ReceiveData), kRxBufferBytes, 0,
+            reinterpret_cast<sockaddr*>(&AddrServer), &fromLen);
+        if (status > 0)
+            break;
+        this_thread::sleep_for(chrono::milliseconds(30));
+    }
     if (status <= 0)
         return err_net_rx_timeout;
 
@@ -76,16 +89,23 @@ int KmBoxNetManager::SendData(int dataLength)
 {
     if (s_Client == INVALID_SOCKET) return err_creat_socket;
 
-    int status = sendto(s_Client, reinterpret_cast<const char*>(&PostData), dataLength, 0,
-        reinterpret_cast<sockaddr*>(&AddrServer), sizeof(AddrServer));
-    if (status == SOCKET_ERROR)
-        return err_creat_socket;
+    int attempts = 2;
+    int status = SOCKET_ERROR;
+    while (attempts-- > 0)
+    {
+        status = sendto(s_Client, reinterpret_cast<const char*>(&PostData), dataLength, 0,
+            reinterpret_cast<sockaddr*>(&AddrServer), sizeof(AddrServer));
+        if (status == SOCKET_ERROR)
+            continue;
 
-    SOCKADDR_IN newClient{};
-    int fromLen = sizeof(newClient);
-
-    status = recvfrom(s_Client, reinterpret_cast<char*>(&ReceiveData), kRxBufferBytes, 0,
-        reinterpret_cast<sockaddr*>(&newClient), &fromLen);
+        SOCKADDR_IN newClient{};
+        int fromLen = sizeof(newClient);
+        status = recvfrom(s_Client, reinterpret_cast<char*>(&ReceiveData), kRxBufferBytes, 0,
+            reinterpret_cast<sockaddr*>(&newClient), &fromLen);
+        if (status > 0)
+            break;
+        this_thread::sleep_for(chrono::milliseconds(5));
+    }
 
     if (status <= 0)
         return err_net_rx_timeout;
@@ -108,7 +128,11 @@ int KmBoxNetManager::RebootDevice()
     // After reboot request, clean up local socket; device will drop connection
     closesocket(s_Client);
     s_Client = INVALID_SOCKET;
-    WSACleanup();
+    if (m_WsaStarted)
+    {
+        WSACleanup();
+        m_WsaStarted = false;
+    }
 
     return rc < 0 ? err_net_rx_timeout : NetHandler();
 }
