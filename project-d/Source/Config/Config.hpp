@@ -91,7 +91,10 @@ namespace Config
             j["Visuals"]["Box"] = Visuals.Box;
             j["Visuals"]["BoxColor"] = { Visuals.BoxColor.x, Visuals.BoxColor.y, Visuals.BoxColor.z, Visuals.BoxColor.w };
             j["Visuals"]["BoxColorVisible"] = { Visuals.BoxColorVisible.x, Visuals.BoxColorVisible.y, Visuals.BoxColorVisible.z, Visuals.BoxColorVisible.w };
+            j["Visuals"]["BoxType"] = static_cast<int>(Visuals.BoxType);
+            j["Visuals"]["BoxThickness"] = Visuals.BoxThickness;
             j["Visuals"]["Health"] = Visuals.Health;
+            j["Visuals"]["HealthType"] = static_cast<int>(Visuals.HealthType);
             j["Visuals"]["Weapon"] = Visuals.Weapon;
             j["Visuals"]["WeaponColor"] = { Visuals.WeaponColor.x, Visuals.WeaponColor.y, Visuals.WeaponColor.z, Visuals.WeaponColor.w };
             j["Visuals"]["Bones"] = Visuals.Bones;
@@ -282,7 +285,10 @@ namespace Config
                 j["Visuals"]["Box"] = false;
                 j["Visuals"]["BoxColor"] = { 1.0f, 1.0f, 1.0f, 1.0f };
                 j["Visuals"]["BoxColorVisible"] = { 1.0f, 1.0f, 1.0f, 1.0f };
+                j["Visuals"]["BoxType"] = static_cast<int>(Structs::BoxStyle::Outline);
+                j["Visuals"]["BoxThickness"] = 1.5f;
                 j["Visuals"]["Health"] = false;
+                j["Visuals"]["HealthType"] = static_cast<int>(Structs::HealthDisplayMode::Bar);
                 j["Visuals"]["Weapon"] = false;
                 j["Visuals"]["WeaponColor"] = { 1.0f, 1.0f, 1.0f, 1.0f };
                 j["Visuals"]["Bones"] = false;
@@ -361,6 +367,9 @@ namespace Config
                             else if (key == "BoxColorVisible") configSection.BoxColorVisible = ImVec4(value[0].get<float>(), value[1].get<float>(), value[2].get<float>(), value[3].get<float>());
                             else if (key == "WeaponColor") configSection.WeaponColor = ImVec4(value[0].get<float>(), value[1].get<float>(), value[2].get<float>(), value[3].get<float>());
                             else if (key == "BonesColor") configSection.BonesColor = ImVec4(value[0].get<float>(), value[1].get<float>(), value[2].get<float>(), value[3].get<float>());
+                            else if (key == "BoxType") configSection.BoxType = static_cast<Structs::BoxStyle>(value.get<int>());
+                            else if (key == "BoxThickness") configSection.BoxThickness = value.get<float>();
+                            else if (key == "HealthType") configSection.HealthType = static_cast<Structs::HealthDisplayMode>(value.get<int>());
                         }
                     }
                 }

@@ -11,6 +11,19 @@ namespace Structs
         BottomRight = 4
     };
 
+    // New: ESP visual style enums
+    enum class HealthDisplayMode {
+        Bar = 0,
+        BarAndNumber = 1,
+        NumberOnly = 2
+    };
+
+    enum class BoxStyle {
+        Outline = 0,   // full outline (current default)
+        Corners = 1,   // corners only
+        Filled = 2     // filled box (with subtle outline)
+    };
+
     struct KmboxConfig 
     {
         bool Enabled;
@@ -65,8 +78,11 @@ namespace Structs
         bool Box;
         ImVec4 BoxColor;
         ImVec4 BoxColorVisible;
+        BoxStyle BoxType = BoxStyle::Outline; // New: box drawing style
+        float BoxThickness = 1.5f;            // New: configurable outline thickness
 
         bool Health;
+        HealthDisplayMode HealthType = HealthDisplayMode::Bar; // New: health display style
 
         bool Weapon;
         ImVec4 WeaponColor;

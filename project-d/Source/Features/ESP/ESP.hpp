@@ -38,16 +38,9 @@ namespace EntityManager {
     extern EntityBuffer* updateBuffer;
     extern EntityBuffer* spareBuffer;
     
-    // Legacy support - points to the current renderBuffer's entities vector
-    extern std::vector<EntityData>* renderEntities;
-    
     // Synchronization
     extern std::mutex buffer_mutex;
     extern std::atomic<bool> buffer_ready;
-    
-    // Entity position tracking for prediction
-    extern std::map<std::string, EntityHistory> entityHistory;
-    extern std::mutex history_mutex;
     
     // Dynamic update rate control
     extern std::atomic<int> updateRate;

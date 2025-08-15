@@ -56,8 +56,11 @@
             1.0,
             1.0
         ],
+        "BoxThickness": 2.299999952316284,
+        "BoxType": 1,
         "Enabled": true,
         "Health": true,
+        "HealthType": 0,
         "Hitmarker": false,
         "HitmarkerColor": [
             1.0,
@@ -73,7 +76,7 @@
             1.0
         ],
         "TeamCheck": false,
-        "VSync": false,
+        "VSync": true,
         "VisibleCheck": false,
         "Watermark": true,
         "WatermarkColor": [

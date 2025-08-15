@@ -3,6 +3,8 @@
 
 #include "Config.hpp"
 #include "Excluded.hpp"
+#include <atomic>
+#include <mutex>
 
 class KmBoxMouse
 {
@@ -42,10 +44,12 @@ public:
 class KmBoxKeyBoard
 {
 public:
-    thread t_Listen;
+    std::thread t_Listen;
     WORD MonitorPort;
     SOCKET s_ListenSocket = 0;
-    bool ListenerRuned = false;
+    std::atomic<bool> ListenerRuned{false};
+private:
+    std::mutex m_MonitorMutex; // Protect hw_Mouse/hw_Keyboard snapshots
 public:
     standard_keyboard_report_t hw_Keyboard;
     standard_mouse_report_t hw_Mouse;
@@ -66,6 +70,8 @@ public:
     int MonitorMouseSide2();
     int MonitorMouseXY(int& x, int& y);
     int MonitorMouseWheel(int& wheel);
+    // Thread-safe snapshot helpers
+    int GetMouseButtons(unsigned char& buttons) { if (!ListenerRuned.load()) return -1; std::lock_guard<std::mutex> lg(m_MonitorMutex); buttons = hw_Mouse.buttons; return 0; }
 
     // Send keyboard events to KMBox
     int KeyDown(int vk_key);

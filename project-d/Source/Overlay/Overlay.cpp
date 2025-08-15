@@ -2,6 +2,8 @@
 #include <SDK.hpp>
 #include <chrono>
 #include <spdlog/spdlog.h>
+#include <dxgi1_5.h>
+#pragma comment(lib, "dxgi.lib")
 
 #include "Overlay.hpp"
 #include "Fonts/IBMPlexMono_Medium.h"
@@ -38,6 +40,8 @@ ImFont* tabFont = nullptr;   // Tab font (16.5pt)
 ImFont* featureFont = nullptr; // Feature font (15pt)
 ImFont* sectionFont = nullptr; // Slightly larger font for section headers
 static ImVec4 s_LastAppliedAccent = ImVec4(-1, -1, -1, -1);
+
+static bool g_AllowTearing = false; // runtime capability
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 static const ImVec4 blueAccent = ImVec4(0.22f, 0.40f, 0.80f, 1.00f);
@@ -196,72 +200,85 @@ LRESULT CALLBACK window_procedure(HWND window, UINT msg, WPARAM wParam, LPARAM l
 
 bool Overlay::CreateDevice()
 {
-	DXGI_SWAP_CHAIN_DESC sd;
-	ZeroMemory(&sd, sizeof(sd));
+    DXGI_SWAP_CHAIN_DESC sd;
+    ZeroMemory(&sd, sizeof(sd));
 
-	sd.BufferCount = 2;
+    sd.BufferCount = 2;
 
-	sd.BufferDesc.Width = 0;
-	sd.BufferDesc.Height = 0;
+    sd.BufferDesc.Width = 0;
+    sd.BufferDesc.Height = 0;
 
-	sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 
-	sd.BufferDesc.RefreshRate.Numerator = 60;
-	sd.BufferDesc.RefreshRate.Denominator = 1;
+    sd.BufferDesc.RefreshRate.Numerator = 60;
+    sd.BufferDesc.RefreshRate.Denominator = 1;
 
-	sd.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH; // keep simple; tear flag may not be available
+    // Query tearing support at runtime
+    {
+        IDXGIFactory5* factory5 = nullptr;
+        if (SUCCEEDED(CreateDXGIFactory1(__uuidof(IDXGIFactory5), (void**)&factory5)) && factory5)
+        {
+            BOOL allow = FALSE;
+            if (SUCCEEDED(factory5->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &allow, sizeof(allow))))
+                g_AllowTearing = allow == TRUE;
+            factory5->Release();
+        }
+    }
 
-	sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+    sd.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
+    if (g_AllowTearing) sd.Flags |= DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING; // enable tearing if supported
 
-	sd.OutputWindow = overlay;
+    sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
 
-	sd.SampleDesc.Count = 1;
-	sd.SampleDesc.Quality = 0;
+    sd.OutputWindow = overlay;
 
-	sd.Windowed = TRUE;
-	sd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD; // flip model
+    sd.SampleDesc.Count = 1;
+    sd.SampleDesc.Quality = 0;
 
-	D3D_FEATURE_LEVEL featureLevel;
-	const D3D_FEATURE_LEVEL featureLevelArray[2] = { D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_0, };
+    sd.Windowed = TRUE;
+    sd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD; // flip model
 
-	HRESULT result = D3D11CreateDeviceAndSwapChain(
-		nullptr,
-		D3D_DRIVER_TYPE_HARDWARE,
-		nullptr,
-		0U,
-		featureLevelArray,
-		2,
-		D3D11_SDK_VERSION,
-		&sd,
-		&swap_chain,
-		&device,
-		&featureLevel,
-		&device_context);
+    D3D_FEATURE_LEVEL featureLevel;
+    const D3D_FEATURE_LEVEL featureLevelArray[2] = { D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_0, };
 
-	if (result == DXGI_ERROR_UNSUPPORTED) {
-		result = D3D11CreateDeviceAndSwapChain(
-			nullptr,
-			D3D_DRIVER_TYPE_WARP,
-			nullptr,
-			0U,
-			featureLevelArray,
-			2, D3D11_SDK_VERSION,
-			&sd,
-			&swap_chain,
-			&device,
-			&featureLevel,
-			&device_context);
+    HRESULT result = D3D11CreateDeviceAndSwapChain(
+        nullptr,
+        D3D_DRIVER_TYPE_HARDWARE,
+        nullptr,
+        0U,
+        featureLevelArray,
+        2,
+        D3D11_SDK_VERSION,
+        &sd,
+        &swap_chain,
+        &device,
+        &featureLevel,
+        &device_context);
 
-		LOG_ERROR("Created with D3D_DRIVER_TYPE_WARP");
-	}
+    if (result == DXGI_ERROR_UNSUPPORTED) {
+        result = D3D11CreateDeviceAndSwapChain(
+            nullptr,
+            D3D_DRIVER_TYPE_WARP,
+            nullptr,
+            0U,
+            featureLevelArray,
+            2, D3D11_SDK_VERSION,
+            &sd,
+            &swap_chain,
+            &device,
+            &featureLevel,
+            &device_context);
 
-	if (result != S_OK) {
-		LOG_ERROR("Device not supported");
-		return false;
-	}
+        LOG_ERROR("Created with D3D_DRIVER_TYPE_WARP");
+    }
+
+    if (result != S_OK) {
+        LOG_ERROR("Device not supported");
+        return false;
+    }
 
     CreateRenderTarget();
-	return true;
+    return true;
 }
 
 void Overlay::DestroyDevice()
@@ -558,8 +575,11 @@ void Overlay::EndRender()
 
     auto beforePresent = std::chrono::steady_clock::now();
     
-    // Simple present; tearing flags may not be available on this SDK
+    // Allow tearing when VSync is disabled to avoid FPS cap by compositor
     UINT presentFlags = 0;
+    if (!config.Visuals.VSync && g_AllowTearing)
+        presentFlags |= DXGI_PRESENT_ALLOW_TEARING;
+
     HRESULT hr = swap_chain->Present(config.Visuals.VSync ? 1 : 0, presentFlags);
     
     auto afterPresent = std::chrono::steady_clock::now();
@@ -1147,10 +1167,61 @@ void Overlay::RenderMenu()
                         PropertyRow("Name Color", [&]{ ImAdd::ColorEdit4("##NameColor", (float*)&config.Visuals.NameColor); });
                     }
                     PropertyRow("Health", [&]{ ToggleSwitchNoLabel("##Health", &config.Visuals.Health); });
+                    if (config.Visuals.Health) {
+                        PropertyRow("Health Display", [&]{
+                            const char* modes[] = { "Bar", "Bar + Number", "Number Only" };
+                            int cur = static_cast<int>(config.Visuals.HealthType);
+                            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+                            ImGui::PushStyleColor(ImGuiCol_FrameBg,        ImVec4(0.18f, 0.18f, 0.18f, 1.00f));
+                            ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.22f, 0.22f, 0.22f, 1.00f));
+                            ImGui::PushStyleColor(ImGuiCol_FrameBgActive,  ImVec4(0.24f, 0.24f, 0.24f, 1.00f));
+                            ImGui::PushStyleColor(ImGuiCol_Border,         ImVec4(gAccent.x, gAccent.y, gAccent.z, 0.60f));
+                            float avail = ImGui::GetContentRegionAvail().x;
+                            ImGui::SetNextWindowSizeConstraints(ImVec2(150.0f, 0.0f), ImVec2(ImMax(150.0f, avail), 300.0f));
+                            if (ImGui::BeginCombo("##HealthDisplay", modes[cur], ImGuiComboFlags_PopupAlignLeft)) {
+                                for (int i = 0; i < IM_ARRAYSIZE(modes); ++i) {
+                                    bool selected = (cur == i);
+                                    if (ImGui::Selectable(modes[i], selected)) {
+                                        cur = i;
+                                        config.Visuals.HealthType = static_cast<Structs::HealthDisplayMode>(cur);
+                                    }
+                                    if (selected) ImGui::SetItemDefaultFocus();
+                                }
+                                ImGui::EndCombo();
+                            }
+                            ImGui::PopStyleColor(4);
+                            ImGui::PopStyleVar();
+                        });
+                    }
                     PropertyRow("Box", [&]{ ToggleSwitchNoLabel("##Box", &config.Visuals.Box); });
                     if (config.Visuals.Box) {
                         PropertyRow("Box Color", [&]{ ImAdd::ColorEdit4("##BoxColor", (float*)&config.Visuals.BoxColor); });
                         PropertyRow("Box Color Visible", [&]{ ImAdd::ColorEdit4("##BoxColorVisible", (float*)&config.Visuals.BoxColorVisible); });
+                        PropertyRow("Box Style", [&]{
+                            const char* styles[] = { "Outline", "Corners", "Filled" };
+                            int cur = static_cast<int>(config.Visuals.BoxType);
+                            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+                            ImGui::PushStyleColor(ImGuiCol_FrameBg,        ImVec4(0.18f, 0.18f, 0.18f, 1.00f));
+                            ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.22f, 0.22f, 0.22f, 1.00f));
+                            ImGui::PushStyleColor(ImGuiCol_FrameBgActive,  ImVec4(0.24f, 0.24f, 0.24f, 1.00f));
+                            ImGui::PushStyleColor(ImGuiCol_Border,         ImVec4(gAccent.x, gAccent.y, gAccent.z, 0.60f));
+                            float avail = ImGui::GetContentRegionAvail().x;
+                            ImGui::SetNextWindowSizeConstraints(ImVec2(150.0f, 0.0f), ImVec2(ImMax(150.0f, avail), 300.0f));
+                            if (ImGui::BeginCombo("##BoxStyle", styles[cur], ImGuiComboFlags_PopupAlignLeft)) {
+                                for (int i = 0; i < IM_ARRAYSIZE(styles); ++i) {
+                                    bool selected = (cur == i);
+                                    if (ImGui::Selectable(styles[i], selected)) {
+                                        cur = i;
+                                        config.Visuals.BoxType = static_cast<Structs::BoxStyle>(cur);
+                                    }
+                                    if (selected) ImGui::SetItemDefaultFocus();
+                                }
+                                ImGui::EndCombo();
+                            }
+                            ImGui::PopStyleColor(4);
+                            ImGui::PopStyleVar();
+                        });
+                        PropertyRow("Box Thickness", [&]{ ImAdd::SliderFloat("##BoxThickness", &config.Visuals.BoxThickness, 0.5f, 6.0f); }, "Outline thickness in pixels");
                     }
                     PropertyRow("Weapon", [&]{ ToggleSwitchNoLabel("##Weapon", &config.Visuals.Weapon); });
                     if (config.Visuals.Weapon) {
