@@ -5,6 +5,7 @@
 #include "Excluded.hpp"
 #include <atomic>
 #include <mutex>
+#include <string>
 
 class KmBoxMouse
 {
@@ -94,11 +95,11 @@ private:
 public:
     ~KmBoxNetManager();
     // Initialize device
-    int InitDevice(const string& IP, WORD Port, const string& Mac);
+    int InitDevice(const std::string& IP, WORD Port, const std::string& Mac);
     // Reboot device
     int RebootDevice();
     // Set device config
-    int SetConfig(const string& IP, WORD Port);
+    int SetConfig(const std::string& IP, WORD Port);
 	// Speed test
 	void SpeedTest(int count = 1000);
 

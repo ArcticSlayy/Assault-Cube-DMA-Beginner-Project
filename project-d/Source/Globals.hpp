@@ -22,6 +22,7 @@ namespace Globals
 	inline uint64_t ClientBase = NULL;
 
 	inline Matrix ViewMatrix;
+	inline int LocalTeam = 0; // new: updated by entity updater
 };
 
 namespace ProcInfo

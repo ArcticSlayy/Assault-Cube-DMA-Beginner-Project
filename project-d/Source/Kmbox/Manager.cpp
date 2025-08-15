@@ -20,7 +20,7 @@ KmBoxNetManager::~KmBoxNetManager()
     }
 }
 
-int KmBoxNetManager::InitDevice(const string& IP, WORD Port, const string& Mac)
+int KmBoxNetManager::InitDevice(const std::string& IP, WORD Port, const std::string& Mac)
 {
     WSADATA wsaData{};
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
@@ -103,7 +103,7 @@ int KmBoxNetManager::RebootDevice()
     return rc < 0 ? err_net_rx_timeout : NetHandler();
 }
 
-int KmBoxNetManager::SetConfig(const string& IP, WORD Port)
+int KmBoxNetManager::SetConfig(const std::string& IP, WORD Port)
 {
     if (s_Client == INVALID_SOCKET)
         return err_creat_socket;
@@ -120,7 +120,7 @@ int KmBoxNetManager::SetConfig(const string& IP, WORD Port)
 
 void KmBoxNetManager::SpeedTest(int count)
 {
-    auto startTime = chrono::steady_clock::now();
+    auto startTime = std::chrono::steady_clock::now();
     for (int i = count; i > 0; i -= 2)
     {
         int ret = Kmbox.Mouse.Move(0, -100);
@@ -128,7 +128,7 @@ void KmBoxNetManager::SpeedTest(int count)
         ret = Kmbox.Mouse.Move(0, 100);
         if (ret != 0) LOG_ERROR("tx error {} ret2= {}", i, ret);
     }
-    auto ms = chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - startTime).count();
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - startTime).count();
     LOG_INFO("Speed test ({} calls) took {} ms", count, ms);
 }
 

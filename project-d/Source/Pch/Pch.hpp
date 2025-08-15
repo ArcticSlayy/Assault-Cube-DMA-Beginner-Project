@@ -39,8 +39,6 @@
 #include <ppltasks.h>
 
 // External Libraries & Namespace Usings
-using namespace std;
-
 #include "skCrypter.h"
 #include "spdlog/spdlog.h"
 

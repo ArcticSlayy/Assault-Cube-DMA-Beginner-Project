@@ -11,12 +11,18 @@ bool SDK::Init()
     return true;
 }
 
+void SDK::Shutdown()
+{
+    if (m_UpdateThread.joinable())
+        m_UpdateThread.join();
+}
+
 // Optimized WorldToScreen with SSE instructions if available
 bool SDK::WorldToScreen(const Vector3& pos, Vector2& out, const Matrix& matrix, int width, int height)
 {
-    // Constants for faster calculation - prepare once
-    static const float half_width = width * 0.5f;
-    static const float half_height = height * 0.5f;
+    // Compute per-call to avoid caching incorrect values on first call
+    const float half_width = width * 0.5f;
+    const float half_height = height * 0.5f;
     
     const float* m = (const float*)&matrix;
     

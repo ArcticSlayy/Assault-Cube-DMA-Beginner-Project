@@ -3,6 +3,8 @@
 #include <Features.hpp>
 #include <Overlay.hpp>
 #include <ESP/ESP.hpp>
+#include <thread>
+#include <chrono>
 
 /*
 main.cpp
@@ -10,6 +12,8 @@ main.cpp
 - Keeps initialization linear and early-outs on failure with logs.
 - Main loop strictly handles overlay rendering; heavy work is offloaded to UpdateEntities() thread.
 */
+
+static std::thread g_kmboxMouseWatch; // owned watcher
 
 int main()
 {
@@ -23,7 +27,7 @@ int main()
     | |   | | |   | | |   | | |   | | |   | | |   | |
     | |A  | | |W  | | |H  | | |A  | | |R  | | |E  | |
     | +---+ | +---+ | +---+ | +---+ | +---+ | +---+ |
-    |/_____\|/_____\|/_____\|/_____\|/_____\|/_____\|
+    |/_____\|/_____\|/_____\|/_____/|/_____/|/_____/|
 )" << '\n';
 
     // Exception handler must be first to catch early issues
@@ -53,30 +57,29 @@ int main()
         {
             ProcInfo::KmboxInitialized = true;
 
-            // Start KMBOX input monitor on a local UDP port
-            constexpr WORD kMonitorPort = 23333;
-            int monRc = Kmbox.KeyBoard.StartMonitor(kMonitorPort);
-            if (monRc != 0) {
+            // Start KMBOX input monitor on a local UDP port (from config; fallback default)
+            WORD monitorPort = config.Kmbox.Port ? config.Kmbox.Port : 23333;
+            int monRc = Kmbox.KeyBoard.StartMonitor(monitorPort);
+            if (monRc == 0) {
+                // Background watcher: print when right mouse button is pressed (edge-triggered)
+                g_kmboxMouseWatch = std::thread([&]() {
+                    bool lastRight = false;
+                    while (Globals::Running)
+                    {
+                        int right = Kmbox.KeyBoard.MonitorMouseRight(); // -1 = not running, 0 = up, 1 = down
+                        if (right >= 0) {
+                            bool curRight = (right == 1);
+                            if (curRight && !lastRight) {
+                                std::cout << "[KMBox] Right mouse button pressed" << std::endl;
+                            }
+                            lastRight = curRight;
+                        }
+                        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                    }
+                });
+            } else {
                 LOG_ERROR("KMBox monitor start failed: {}", monRc);
             }
-
-            // Background watcher: print when right mouse button is pressed (edge-triggered)
-            static std::thread s_kmboxMouseWatch([&]() {
-                bool lastRight = false;
-                while (Globals::Running)
-                {
-                    int right = Kmbox.KeyBoard.MonitorMouseRight(); // -1 = not running, 0 = up, 1 = down
-                    if (right >= 0) {
-                        bool curRight = (right == 1);
-                        if (curRight && !lastRight) {
-                            std::cout << "[KMBox] Right mouse button pressed" << std::endl;
-                        }
-                        lastRight = curRight;
-                    }
-                    std::this_thread::sleep_for(std::chrono::milliseconds(5));
-                }
-            });
-            s_kmboxMouseWatch.detach();
         }
         else
         {
@@ -148,8 +151,17 @@ int main()
     if (ProcInfo::KmboxInitialized)
         Kmbox.KeyBoard.EndMonitor();
 
+    if (g_kmboxMouseWatch.joinable()) g_kmboxMouseWatch.join();
+
+    sdk.Shutdown();
+
 	overlay.Destroy();
 
+#ifndef _DEBUG
+    // Proper shutdown path: no console pause in release
+    return 0;
+#else
     system("pause");
     return 0;
+#endif
 }

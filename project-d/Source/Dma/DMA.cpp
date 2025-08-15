@@ -17,7 +17,7 @@ bool DMA::Init()
     if (!mem.Init(GAME_NAME))
     {
         LOG_ERROR("Failed to initialize DMA");
-        return 1;
+        return false;
     }
 
     Globals::ClientBase = mem.GetBaseDaddy(CLIENT_DLL);
@@ -30,7 +30,7 @@ bool DMA::Init()
     if (!mem.GetKeyboard()->InitKeyboard())
     {
         LOG_ERROR("Failed to initialize DMA Keyboard");
-        return 1;
+        return false;
     }
 
     if (!mem.FixCr3())

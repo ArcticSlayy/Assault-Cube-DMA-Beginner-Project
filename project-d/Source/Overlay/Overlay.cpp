@@ -20,17 +20,14 @@ Overlay.cpp
 - Goal: beautiful yet performant UI with minimal per-frame allocations.
 */
 /*
-If you want to change the icons or see what all icons there are available, you can use the font viewwer I have that works with the font_awesome.h/cpp.
+If you want to change the icons or see what all icons there are available, you can use the font viewver I have that works with the font_awesome.h/cpp.
 To use it, just uncomment the line below. Then open the normal menu which in my current case is Insert, then once the menu is open, press F10 to open the icon viewer.
 */
 // #define SHOW_ICON_FONT_VIEWER
-ID3D11Device* Overlay::device = nullptr;
-
-ID3D11DeviceContext* Overlay::device_context = nullptr;
-
-IDXGISwapChain* Overlay::swap_chain = nullptr;
-
-ID3D11RenderTargetView* Overlay::render_targetview = nullptr;
+Microsoft::WRL::ComPtr<ID3D11Device> Overlay::device = nullptr;
+Microsoft::WRL::ComPtr<ID3D11DeviceContext> Overlay::device_context = nullptr;
+Microsoft::WRL::ComPtr<IDXGISwapChain> Overlay::swap_chain = nullptr;
+Microsoft::WRL::ComPtr<ID3D11RenderTargetView> Overlay::render_targetview = nullptr;
 
 HWND Overlay::overlay = nullptr;
 WNDCLASSEX Overlay::wc = { };
@@ -63,6 +60,17 @@ static void DrawShadowRect(ImDrawList* dl, ImVec2 a, ImVec2 b, float rounding, I
         ));
         dl->AddRect(a - ImVec2(spread * t, spread * t), b + ImVec2(spread * t, spread * t), c, rounding + t, 0, 1.0f);
     }
+}
+
+// Enhanced slider fill track helper (draw on current ItemRect)
+static void DrawSliderProgressOnLastItem(float t, ImU32 fillCol)
+{
+    ImRect bb(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+    float clamped = ImClamp(t, 0.0f, 1.0f);
+    float w = bb.Max.x - bb.Min.x;
+    ImVec2 a = bb.Min;
+    ImVec2 b = ImVec2(bb.Min.x + w * clamped, bb.Max.y);
+    ImGui::GetWindowDrawList()->AddRectFilled(a, b, fillCol, ImGui::GetStyle().FrameRounding);
 }
 
 static void HelpMarker(const char* desc)
@@ -146,17 +154,16 @@ static void PropertyRow(const char* label, Fn drawer, const char* help = nullptr
 // Helpers for render target lifecycle
 void Overlay::CreateRenderTarget()
 {
-    ID3D11Texture2D* back_buffer{ nullptr };
-    if (swap_chain && SUCCEEDED(swap_chain->GetBuffer(0U, IID_PPV_ARGS(&back_buffer))) && back_buffer)
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> back_buffer;
+    if (swap_chain && SUCCEEDED(swap_chain->GetBuffer(0U, IID_PPV_ARGS(back_buffer.ReleaseAndGetAddressOf()))) && back_buffer)
     {
-        device->CreateRenderTargetView(back_buffer, nullptr, &render_targetview);
-        back_buffer->Release();
+        device->CreateRenderTargetView(back_buffer.Get(), nullptr, render_targetview.ReleaseAndGetAddressOf());
     }
 }
 
 void Overlay::CleanupRenderTarget()
 {
-    if (render_targetview) { render_targetview->Release(); render_targetview = nullptr; }
+    if (render_targetview) { render_targetview.Reset(); }
 }
 
 LRESULT CALLBACK window_procedure(HWND window, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -250,10 +257,10 @@ bool Overlay::CreateDevice()
         2,
         D3D11_SDK_VERSION,
         &sd,
-        &swap_chain,
-        &device,
+        swap_chain.ReleaseAndGetAddressOf(),
+        device.ReleaseAndGetAddressOf(),
         &featureLevel,
-        &device_context);
+        device_context.ReleaseAndGetAddressOf());
 
     if (result == DXGI_ERROR_UNSUPPORTED) {
         result = D3D11CreateDeviceAndSwapChain(
@@ -264,10 +271,10 @@ bool Overlay::CreateDevice()
             featureLevelArray,
             2, D3D11_SDK_VERSION,
             &sd,
-            &swap_chain,
-            &device,
+            swap_chain.ReleaseAndGetAddressOf(),
+            device.ReleaseAndGetAddressOf(),
             &featureLevel,
-            &device_context);
+            device_context.ReleaseAndGetAddressOf());
 
         LOG_ERROR("Created with D3D_DRIVER_TYPE_WARP");
     }
@@ -285,35 +292,9 @@ void Overlay::DestroyDevice()
 {
     CleanupRenderTarget();
 
-    if (device_context)
-    {
-        device_context->Release();
-        device_context = nullptr;
-    }
-    else
-    {
-        LOG_ERROR("device_context is null during cleanup");
-    }
-
-    if (swap_chain)
-    {
-        swap_chain->Release();
-        swap_chain = nullptr;
-    }
-    else
-    {
-        LOG_ERROR("swap_chain is null during cleanup");
-    }
-
-    if (device)
-    {
-        device->Release();
-        device = nullptr;
-    }
-    else
-    {
-        LOG_ERROR("device is null during cleanup");
-    }
+    if (device_context) device_context.Reset(); else LOG_ERROR("device_context is null during cleanup");
+    if (swap_chain) swap_chain.Reset(); else LOG_ERROR("swap_chain is null during cleanup");
+    if (device) device.Reset(); else LOG_ERROR("device is null during cleanup");
 }
 
 bool Overlay::CreateOverlay()
@@ -375,6 +356,9 @@ bool Overlay::CreateOverlay()
 	// Topmost is set once; avoid reasserting every frame
 	SetWindowPos(overlay, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
 
+    // Ensure transparency is set initially when menu is closed
+    SetWindowLong(overlay, GWL_EXSTYLE, WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT | WS_EX_LAYERED);
+
 	return true;
 }
 
@@ -394,7 +378,7 @@ bool Overlay::CreateImGui()
 		return false;
 	}
 
-	if (!ImGui_ImplDX11_Init(device, device_context)) {
+	if (!ImGui_ImplDX11_Init(device.Get(), device_context.Get())) {
 		LOG_ERROR("Failed ImGui_ImplDX11_Init");
 		return false;
 	}
@@ -488,8 +472,8 @@ void Overlay::EndRender()
         color[0] = 0; color[1] = 0; color[2] = 0; color[3] = 0;
     }
 
-    device_context->OMSetRenderTargets(1, &render_targetview, nullptr);
-    device_context->ClearRenderTargetView(render_targetview, color);
+    device_context->OMSetRenderTargets(1, render_targetview.GetAddressOf(), nullptr);
+    device_context->ClearRenderTargetView(render_targetview.Get(), color);
 
     // Always draw FOV circle if enabled (before rendering draw data)
     if (config.Aim.DrawFov)
@@ -504,10 +488,8 @@ void Overlay::EndRender()
     // Add watermark if enabled (cheap text draws)
     if (config.Visuals.Watermark)
     {
-        // Get FPS for watermark
         float fps = ImGui::GetIO().Framerate;
-        
-        ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+        ImDrawList* drawList = ImGui::GetForegroundDrawList();
         ImVec4 watermarkColor = config.Visuals.WatermarkColor;
         ImU32 textColor = ImGui::GetColorU32(watermarkColor);
         
@@ -574,33 +556,16 @@ void Overlay::EndRender()
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 
     auto beforePresent = std::chrono::steady_clock::now();
-    
-    // Allow tearing when VSync is disabled to avoid FPS cap by compositor
+
     UINT presentFlags = 0;
     if (!config.Visuals.VSync && g_AllowTearing)
         presentFlags |= DXGI_PRESENT_ALLOW_TEARING;
 
     HRESULT hr = swap_chain->Present(config.Visuals.VSync ? 1 : 0, presentFlags);
-    
+
     auto afterPresent = std::chrono::steady_clock::now();
 
-    // Avoid SetWindowPos every frame (moved to creation)
-
-    // Log timings for diagnostics
-    static int frameCount = 0;
-    frameCount++;
-#ifdef OVERLAY_LOGGING_ENABLED
-    if (frameCount % 60 == 0) { // Log every 60 frames
-        auto frameStart = beforeRender; // Use beforeRender as frame start
-        auto frameEnd = afterPresent;
-        spdlog::info("Overlay timings (us): NewFrame+Render={} | RenderDrawData={} | Present={} | FullFrame={}",
-            std::chrono::duration_cast<std::chrono::microseconds>(beforeRender - frameStart).count(),
-            std::chrono::duration_cast<std::chrono::microseconds>(afterRender - beforeRender).count(),
-            std::chrono::duration_cast<std::chrono::microseconds>(afterPresent - beforePresent).count(),
-            std::chrono::duration_cast<std::chrono::microseconds>(frameEnd - frameStart).count()
-        );
-    }
-#endif
+    // Timings logging guard remains
 }
 
 void Overlay::StyleMenu(ImGuiIO& IO, ImGuiStyle& style)
@@ -1221,7 +1186,28 @@ void Overlay::RenderMenu()
                             ImGui::PopStyleColor(4);
                             ImGui::PopStyleVar();
                         });
-                        PropertyRow("Box Thickness", [&]{ ImAdd::SliderFloat("##BoxThickness", &config.Visuals.BoxThickness, 0.5f, 6.0f); }, "Outline thickness in pixels");
+                        PropertyRow("Box Thickness", [&]{
+                            // Draw base slider
+                            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.18f, 0.18f, 0.18f, 1.0f));
+                            ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(gAccent.x, gAccent.y, gAccent.z, 0.25f));
+                            ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(gAccent.x, gAccent.y, gAccent.z, 0.35f));
+                            ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(gAccent.x, gAccent.y, gAccent.z, 0.85f));
+                            ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, ImVec4(gAccent.x, gAccent.y, gAccent.z, 1.00f));
+                            float v_min = 0.5f, v_max = 6.0f;
+                            // We need the bounding box to draw a filled progress underlay
+                            ImGui::PushID("##BoxThickness");
+                            ImVec2 pos = ImGui::GetCursorScreenPos();
+                            float avail = ImGui::GetContentRegionAvail().x;
+                            ImRect bb(pos, pos + ImVec2(avail, ImGui::GetFrameHeight()));
+                            // Slider
+                            ImAdd::SliderFloat("", &config.Visuals.BoxThickness, v_min, v_max);
+                            // Fill track up to current value to make it obvious what's selected
+                            float t = (config.Visuals.BoxThickness - v_min) / (v_max - v_min);
+                            ImU32 fillCol = ImGui::GetColorU32(ImVec4(gAccent.x, gAccent.y, gAccent.z, 0.35f));
+                            DrawSliderProgressOnLastItem(t, fillCol);
+                            ImGui::PopID();
+                            ImGui::PopStyleColor(5);
+                        }, "Outline thickness in pixels");
                     }
                     PropertyRow("Weapon", [&]{ ToggleSwitchNoLabel("##Weapon", &config.Visuals.Weapon); });
                     if (config.Visuals.Weapon) {

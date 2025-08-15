@@ -373,11 +373,22 @@ namespace EntityManager {
                 newPending.timestamp = now;
                 pendingViewMatrix = newPending;
                 pendingViewMatrixValid.store(true, std::memory_order_release);
+                // Publish immediately for renderer
+                {
+                    std::lock_guard<std::mutex> vm_lock(viewMatrix_mutex);
+                    previousViewMatrix = currentViewMatrix;
+                    currentViewMatrix = newPending;
+                }
+                Globals::ViewMatrix = newPending.matrix;
             }
 
-            // Validate player count to avoid reading garbage
+            // Validation of player count to avoid reading garbage
             if (playerCount <= 0 || playerCount > MAX_PLAYERS) {
-                playerCount = MAX_PLAYERS; // Default to max if invalid
+                // use a sane fallback but keep a log
+#ifdef ESP_LOGGING_ENABLED
+                spdlog::warn("Invalid playerCount={} -> clamping to {}", playerCount, MAX_PLAYERS);
+#endif
+                playerCount = MAX_PLAYERS;
                 badReadCount.fetch_add(1, std::memory_order_relaxed);
             }
 
@@ -673,9 +684,13 @@ namespace EntityManager {
                 EntityBuffer* currentRender = atomicRenderBuffer.load(std::memory_order_acquire);
                 size_t prevCount = currentRender ? currentRender->entities.size() : 0;
                 auto elapsedUsForBuild = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count();
-                bool severeDrop = (prevCount >= 5 && newCount * 3 < prevCount); // >66% drop
-                bool longBuild = (elapsedUsForBuild > 8000); // >8ms build time
+                bool severeDrop = (prevCount >= 10 && newCount * 3 < prevCount); // less aggressive
+                bool longBuild = (elapsedUsForBuild > 20000); // allow up to 20ms to push first frames
                 bool goodFrame = (newCount > 0) && !severeDrop && !longBuild;
+                if (prevCount == 0 && newCount > 0) goodFrame = true;
+#ifdef ESP_LOGGING_ENABLED
+                spdlog::debug("Entity build: newCount={} prevCount={} us={} good={} drop={} long={}", newCount, prevCount, (int)elapsedUsForBuild, goodFrame, severeDrop, longBuild);
+#endif
 
                 if (!goodFrame) {
 #ifdef ESP_LOGGING_ENABLED
@@ -921,10 +936,9 @@ void ESP::Render(ImDrawList* drawList)
     }
 
     // Local player team (first entity if exposed, otherwise 0)
-    int localPlayerTeam = 0;
-    if (!entitiesRef.empty()) {
-        localPlayerTeam = entitiesRef[0].team;
-    }
+    int localPlayerTeam = Globals::LocalTeam;
+    // If we don't know local team yet, don't filter by team
+    bool allowTeamCheck = config.Visuals.TeamCheck && (localPlayerTeam != 0);
 
     int totalEntities = 0;
     int renderedEntities = 0;
@@ -952,7 +966,7 @@ void ESP::Render(ImDrawList* drawList)
         tlsAnimationState.updateLastSeen(entityKey, currentTime);
 
         // Team check
-        if (config.Visuals.TeamCheck && entity.team == localPlayerTeam)
+        if (allowTeamCheck && entity.team == localPlayerTeam)
             continue;
 
         // History snapshot lookup (lock-free, aligned with entities)

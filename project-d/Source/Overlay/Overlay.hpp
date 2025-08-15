@@ -1,5 +1,6 @@
 #pragma once
 #include <d3d11.h>
+#include <wrl/client.h>
 #include "imgui/imgui.h"
 #include "imgui/imgui_internal.h"
 #include "imgui/imgui_impl_dx11.h"
@@ -51,10 +52,11 @@ public:
 
 	static ImDrawList* GetBackgroundDrawList() { return ImGui::GetBackgroundDrawList(); }
 
-	static ID3D11Device* device;
-	static ID3D11DeviceContext* device_context;
-	static IDXGISwapChain* swap_chain;
-	static ID3D11RenderTargetView* render_targetview;
+	// Use ComPtr to manage lifetimes automatically
+	static Microsoft::WRL::ComPtr<ID3D11Device> device;
+	static Microsoft::WRL::ComPtr<ID3D11DeviceContext> device_context;
+	static Microsoft::WRL::ComPtr<IDXGISwapChain> swap_chain;
+	static Microsoft::WRL::ComPtr<ID3D11RenderTargetView> render_targetview;
 
 	inline static bool shouldRenderMenu;
 
