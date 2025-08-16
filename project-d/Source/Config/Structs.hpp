@@ -72,6 +72,9 @@ namespace Structs
         // Accent color for theming (persisted)
         ImVec4 Accent = ImVec4(0.22f, 0.40f, 0.80f, 1.00f);
 
+        // New: UI toast notifications toggle (persisted)
+        bool ToastsEnabled = true;
+
         bool Name;
         ImVec4 NameColor;
 

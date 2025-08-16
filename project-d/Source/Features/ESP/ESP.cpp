@@ -11,13 +11,14 @@
 #include <unordered_set>
 #include <spdlog/spdlog.h>
 #include "Config/Structs.hpp" // for Structs::HealthDisplayMode and Structs::BoxStyle
+#include <cstdint>
 
 /*
 ESP.cpp
 - High-performance entity polling and rendering.
 - Implements a triple-buffered entity data pipeline + atomically swapped view matrix.
 - Focus on minimizing stalls and allocations per frame.
-- This file is performance-critical: prefer static storage, reserve(), and predictable branches.
+- Cleanups: reduce per-frame string allocations in renderer by using 64-bit composite keys.
 */
 
 namespace EntityManager {
@@ -112,22 +113,18 @@ namespace EntityManager {
     std::atomic<bool> update_thread_active{false};     // Flag to indicate active updating
     
     // Cache-optimized entity history map to improve memory access patterns
-    // This structure keeps entity histories in a contiguous memory block
-    // for better cache locality and reduced memory fragmentation
     struct EntityHistoryCache {
         std::vector<EntityHistory> histories;
         std::unordered_map<std::string, size_t> keyToIndex;
         std::mutex mutex;
         
         EntityHistory* get(const std::string& key) {
-            // First try a quick read-only lookup without locking
             {
                 auto it = keyToIndex.find(key);
                 if (it != keyToIndex.end() && it->second < histories.size()) {
                     return &histories[it->second];
                 }
             }
-            // Not found in read-only pass, need to lock and maybe add
             std::lock_guard<std::mutex> lock(mutex);
             auto it = keyToIndex.find(key);
             if (it == keyToIndex.end()) {
@@ -141,7 +138,6 @@ namespace EntityManager {
         }
         
         void removeStaleEntities(int maxFailedFrames) {
-            // Compact in-place to avoid vector churn
             std::lock_guard<std::mutex> lock(mutex);
             size_t writeIndex = 0;
             std::unordered_map<std::string, size_t> newMap;
@@ -209,7 +205,6 @@ namespace EntityManager {
     // Simple sanity check for view matrix to avoid swapping-in garbage
     inline bool IsViewMatrixSane(const Matrix& m)
     {
-        // Check a few key elements are finite and not all near-zero
         auto finite = [](float v){ return std::isfinite(v); };
         float diagAbs = std::fabs(m[0][0]) + std::fabs(m[1][1]) + std::fabs(m[2][2]);
         if (diagAbs < 1e-4f) return false;
@@ -261,24 +256,17 @@ namespace EntityManager {
         };
     }
     
-    // Update dynamic properties
     void UpdateDynamicProperties() {
-        // Adjust update rate based on bad read count
         int badReads = badReadCount.exchange(0, std::memory_order_relaxed);
-        
-        // If too many bad reads, slow down update rate to reduce pressure on DMA
         if (badReads > MAX_BAD_READS_BEFORE_SLOWDOWN) {
             int newRate = std::min(updateRate.load(std::memory_order_relaxed) + 1, MAX_UPDATE_RATE_MS);
             updateRate.store(newRate, std::memory_order_relaxed);
-        } 
-        // If reads are good, gradually speed up
-        else if (badReads == 0 && updateRate.load(std::memory_order_relaxed) > MIN_UPDATE_RATE_MS) {
+        } else if (badReads == 0 && updateRate.load(std::memory_order_relaxed) > MIN_UPDATE_RATE_MS) {
             int newRate = updateRate.load(std::memory_order_relaxed) - 1;
             updateRate.store(newRate, std::memory_order_relaxed);
         }
     }
 
-    // Pre-fetch and prepare for entity reading
     void PrepareEntityRead(VMMDLL_SCATTER_HANDLE scatterGlobals, uint32_t& playerCount, uint32_t& dwLocalPlayer, uint32_t& entityListAddr, Matrix& newViewMatrix, uint32_t& localPlayerTeam) {
         // Keep the scatter submission list minimal and predictable
         mem.AddScatterReadRequest(scatterGlobals, Globals::ClientBase + p_game->player_count, &playerCount, sizeof(playerCount));
@@ -385,9 +373,6 @@ namespace EntityManager {
             // Validation of player count to avoid reading garbage
             if (playerCount <= 0 || playerCount > MAX_PLAYERS) {
                 // use a sane fallback but keep a log
-#ifdef ESP_LOGGING_ENABLED
-                spdlog::warn("Invalid playerCount={} -> clamping to {}", playerCount, MAX_PLAYERS);
-#endif
                 playerCount = MAX_PLAYERS;
                 badReadCount.fetch_add(1, std::memory_order_relaxed);
             }
@@ -688,17 +673,8 @@ namespace EntityManager {
                 bool longBuild = (elapsedUsForBuild > 20000); // allow up to 20ms to push first frames
                 bool goodFrame = (newCount > 0) && !severeDrop && !longBuild;
                 if (prevCount == 0 && newCount > 0) goodFrame = true;
-#ifdef ESP_LOGGING_ENABLED
-                spdlog::debug("Entity build: newCount={} prevCount={} us={} good={} drop={} long={}", newCount, prevCount, (int)elapsedUsForBuild, goodFrame, severeDrop, longBuild);
-#endif
 
                 if (!goodFrame) {
-#ifdef ESP_LOGGING_ENABLED
-                    if (severeDrop)
-                        spdlog::debug("Skipped buffer swap: severe entity drop (prev={}, new={})", prevCount, newCount);
-                    if (longBuild)
-                        spdlog::debug("Skipped buffer swap: long build {} us", elapsedUsForBuild);
-#endif
                     // Back off update rate slightly to relieve pressure
                     int curRate = updateRate.load(std::memory_order_relaxed);
                     updateRate.store(std::min(curRate + 1, MAX_UPDATE_RATE_MS), std::memory_order_relaxed);
@@ -747,12 +723,6 @@ namespace EntityManager {
                     currentSleepMicroseconds = std::max(MIN_SLEEP_MICROSECONDS, currentSleepMicroseconds - 25);
                 }
             }
-
-#ifdef ESP_LOGGING_ENABLED
-            if (duration_us > 10000) {
-                spdlog::warn("UpdateEntities took {} us (dmaErrorCount={})", duration_us, dmaErrorCount);
-            }
-#endif
         }
         
         // Clear active flag when thread exits
@@ -772,8 +742,6 @@ namespace EntityManager {
             mem.CloseScatterHandle(scatterGlobals);
             
             if (dwLocalPlayer) {
-                spdlog::info("==== LOCAL PLAYER ADDRESS: 0x{:X} ====", dwLocalPlayer);
-                
                 // Optional: Print additional information about the local player
                 uint32_t health = 0;
                 uint32_t team = 0;
@@ -825,20 +793,19 @@ namespace EntityManager {
     }
 }
 
-// Thread-local storage for per-entity animation state
+// Thread-local storage for per-entity animation state (uint64_t composite keys to avoid string allocs)
 thread_local struct {
-    std::unordered_map<std::string, float> animHealthPerc;
-    std::unordered_map<std::string, float> lastBoxWidths;
-    std::unordered_map<std::string, float> lastBoxHeights;
-    // New: screen-space smoothing state
-    std::unordered_map<std::string, ImVec2> lastHeadScreen;
-    std::unordered_map<std::string, ImVec2> lastFootScreen;
+    std::unordered_map<uint64_t, float> animHealthPerc;
+    std::unordered_map<uint64_t, float> lastBoxWidths;
+    std::unordered_map<uint64_t, float> lastBoxHeights;
+    std::unordered_map<uint64_t, ImVec2> lastHeadScreen;
+    std::unordered_map<uint64_t, ImVec2> lastFootScreen;
     float deltaTime = 0.016f;  // Default to 60fps
-    std::unordered_map<std::string, std::chrono::steady_clock::time_point> lastSeen;
+    std::unordered_map<uint64_t, std::chrono::steady_clock::time_point> lastSeen;
     
     void cleanupStaleEntries(const std::chrono::steady_clock::time_point& now, 
                              const std::chrono::seconds& maxAge = std::chrono::seconds(30)) {
-        std::vector<std::string> toRemove;
+        std::vector<uint64_t> toRemove;
         toRemove.reserve(lastSeen.size());
         for (const auto& kv : lastSeen) {
             if (std::chrono::duration_cast<std::chrono::seconds>(now - kv.second) > maxAge) {
@@ -853,17 +820,17 @@ thread_local struct {
             lastFootScreen.erase(key);
             lastSeen.erase(key);
         }
-#ifdef ESP_LOGGING_ENABLED
-        if (!toRemove.empty()) {
-            spdlog::debug("Cleaned up {} stale TLS animation entries", toRemove.size());
-        }
-#endif
     }
     
-    void updateLastSeen(const std::string& key, const std::chrono::steady_clock::time_point& now) {
+    void updateLastSeen(uint64_t key, const std::chrono::steady_clock::time_point& now) {
         lastSeen[key] = now;
     }
 } tlsAnimationState;
+
+static inline uint64_t MakeEntityKey64(const EntityData& e) {
+    // xor-mix id with index and team to reduce collision probability
+    return (e.id ^ (uint64_t(e.index) << 1) ^ (uint64_t(uint32_t(e.team)) << 33));
+}
 
 void ESP::Render(ImDrawList* drawList)
 {
@@ -888,7 +855,6 @@ void ESP::Render(ImDrawList* drawList)
     SHORT keyState = GetAsyncKeyState(VK_F9);
     if ((keyState & 0x1) && !(lastKeyState & 0x1)) {
         showDebugInfo = !showDebugInfo;
-        spdlog::info("Debug visualization: {}", showDebugInfo ? "ON" : "OFF");
     }
     lastKeyState = keyState;
 
@@ -953,17 +919,27 @@ void ESP::Render(ImDrawList* drawList)
     const int healthMode = (int)config.Visuals.HealthType;
     const int boxMode = (int)config.Visuals.BoxType;
 
+    // Small helper for soft shadow around rectangles (cheap multi-layer)
+    auto DrawSoftShadowRect = [&](ImDrawList* dl, ImVec2 a, ImVec2 b, float rounding, ImU32 col, int layers = 3, float spread = 3.5f, float alphaDecay = 0.45f)
+    {
+        ImVec4 base = ImGui::ColorConvertU32ToFloat4(col);
+        for (int i = 0; i < layers; ++i) {
+            float t = 1.0f + (float)i * 0.5f;
+            float alpha = base.w * std::pow(1.0f - alphaDecay, (float)i);
+            ImU32 c = ImGui::GetColorU32(ImVec4(base.x, base.y, base.z, alpha));
+            dl->AddRect(a - ImVec2(spread * t, spread * t), b + ImVec2(spread * t, spread * t), c, rounding + t, 0, 1.0f);
+        }
+    };
+
     for (size_t ei = 0; ei < entitiesRef.size(); ++ei) {
         const auto& entity = entitiesRef[ei];
         totalEntities++;
 
         // Build stable key (prevents duplicate-name flicker)
-        char keyBuf[128];
-        snprintf(keyBuf, sizeof(keyBuf), "%s|%d|%llX|%d", entity.name.c_str(), entity.team, (unsigned long long)entity.id, entity.index);
-        std::string entityKey(keyBuf);
+        uint64_t entityKey64 = MakeEntityKey64(entity);
 
         // Update animation last-seen
-        tlsAnimationState.updateLastSeen(entityKey, currentTime);
+        tlsAnimationState.updateLastSeen(entityKey64, currentTime);
 
         // Team check
         if (allowTeamCheck && entity.team == localPlayerTeam)
@@ -1031,8 +1007,8 @@ void ESP::Render(ImDrawList* drawList)
         // Smooth only when movement is very small; snap instantly otherwise.
         ImVec2 curHead(headScreenPos.x, headScreenPos.y);
         ImVec2 curFoot(footScreenPos.x, footScreenPos.y);
-        ImVec2& lastHead2D = tlsAnimationState.lastHeadScreen[entityKey];
-        ImVec2& lastFoot2D = tlsAnimationState.lastFootScreen[entityKey];
+        ImVec2& lastHead2D = tlsAnimationState.lastHeadScreen[entityKey64];
+        ImVec2& lastFoot2D = tlsAnimationState.lastFootScreen[entityKey64];
         if (lastHead2D.x == 0.0f && lastHead2D.y == 0.0f) lastHead2D = curHead;
         if (lastFoot2D.x == 0.0f && lastFoot2D.y == 0.0f) lastFoot2D = curFoot;
         auto len2 = [](const ImVec2& v){ return v.x*v.x + v.y*v.y; };
@@ -1082,9 +1058,14 @@ void ESP::Render(ImDrawList* drawList)
         // Box draw with polish: select style
         drawList->ChannelsSetCurrent(0);
         if (config.Visuals.Box) {
-            float rounding = 2.0f;
+            float rounding = 3.5f;
             const float thickness = std::max(0.5f, config.Visuals.BoxThickness);
             ImU32 boxColor = IM_COL32((int)(config.Visuals.BoxColor.x * 255), (int)(config.Visuals.BoxColor.y * 255), (int)(config.Visuals.BoxColor.z * 255), (int)(config.Visuals.BoxColor.w * 255 * opacity));
+            // soft shadow/glow backdrop
+            if (!isTiny) {
+                ImU32 shadow = IM_COL32(0, 0, 0, (int)(120 * opacity));
+                DrawSoftShadowRect(drawList, ImVec2(box_x, box_y), ImVec2(box_x + box_width, box_y + box_height), rounding, shadow, 3, 3.0f, 0.40f);
+            }
             if (boxMode == (int)Structs::BoxStyle::Outline) {
                 if (isTiny) {
                     drawList->AddRect(ImVec2(box_x, box_y), ImVec2(box_x + box_width, box_y + box_height), boxColor, 0.0f, 0, thickness);
@@ -1096,7 +1077,7 @@ void ESP::Render(ImDrawList* drawList)
                     ImU32 darker = IM_COL32(0, 0, 0, (int)(120 * opacity));
                     drawList->AddRect(ImVec2(box_x - 1, box_y - 1), ImVec2(box_x + box_width + 1, box_y + box_height + 1), darker, rounding + 1.0f, 0, 1.0f);
                     drawList->AddRect(ImVec2(box_x, box_y), ImVec2(box_x + box_width, box_y + box_height), boxColor, rounding, 0, thickness);
-                    ImU32 inner = IM_COL32(255, 255, 255, (int)(40 * opacity));
+                    ImU32 inner = IM_COL32(255, 255, 255, (int)(35 * opacity));
                     drawList->AddRect(ImVec2(box_x + 1, box_y + 1), ImVec2(box_x + box_width - 1, box_y + box_height - 1), inner, rounding - 1.0f, 0, 1.0f);
                 }
             } else if (boxMode == (int)Structs::BoxStyle::Corners) {
@@ -1123,11 +1104,13 @@ void ESP::Render(ImDrawList* drawList)
                 // Bottom-right
                 drawCorner(ImVec2(b.x, b.y), ImVec2(-1,0), ImVec2(0,-1));
             } else if (boxMode == (int)Structs::BoxStyle::Filled) {
-                // Visible fill with outline
+                // Visible fill with gradient and outline
                 float baseAlpha = std::min(1.0f, config.Visuals.BoxColor.w * opacity);
-                float fillAlpha = std::max(0.22f, baseAlpha * 0.35f); // ensure visible even on dark backgrounds
-                ImU32 fillCol = IM_COL32((int)(config.Visuals.BoxColor.x * 255), (int)(config.Visuals.BoxColor.y * 255), (int)(config.Visuals.BoxColor.z * 255), (int)(fillAlpha * 255));
-                drawList->AddRectFilled(ImVec2(box_x, box_y), ImVec2(box_x + box_width, box_y + box_height), fillCol, rounding);
+                float fillAlphaTop = std::max(0.22f, baseAlpha * 0.40f);
+                float fillAlphaBot = std::max(0.22f, baseAlpha * 0.25f);
+                ImU32 fillTop = IM_COL32((int)(config.Visuals.BoxColor.x * 255), (int)(config.Visuals.BoxColor.y * 255), (int)(config.Visuals.BoxColor.z * 255), (int)(fillAlphaTop * 255));
+                ImU32 fillBot = IM_COL32((int)(config.Visuals.BoxColor.x * 255), (int)(config.Visuals.BoxColor.y * 255), (int)(config.Visuals.BoxColor.z * 255), (int)(fillAlphaBot * 255));
+                drawList->AddRectFilledMultiColor(ImVec2(box_x, box_y), ImVec2(box_x + box_width, box_y + box_height), fillTop, fillTop, fillBot, fillBot);
                 // Outline on top
                 drawList->AddRect(ImVec2(box_x, box_y), ImVec2(box_x + box_width, box_y + box_height), boxColor, rounding, 0, thickness);
             }
@@ -1159,7 +1142,7 @@ void ESP::Render(ImDrawList* drawList)
             float hb_width = 6.0f;
             float hb_x = box_x - hb_width - 4.0f;
             float hb_y = box_y;
-            float& animPerc = tlsAnimationState.animHealthPerc[entityKey];
+            float& animPerc = tlsAnimationState.animHealthPerc[entityKey64];
             if (animPerc == 0.0f) animPerc = healthPerc;
             float healthChangeSpeed = (animPerc > healthPerc) ? EntityManager::ANIMATION_SPEED_FAST : EntityManager::ANIMATION_SPEED_BASE;
             float frameAdjustedSpeed = healthChangeSpeed * animationDeltaTime;
@@ -1286,18 +1269,4 @@ void ESP::Render(ImDrawList* drawList)
     maxRenderTime = std::max(maxRenderTime, renderTimeMs);
     minRenderTime = std::min(minRenderTime, renderTimeMs);
     frameCounter++;
-    if (std::chrono::duration_cast<std::chrono::seconds>(end - lastFrameMetricOutput).count() >= 1) {
-#ifdef ESP_LOGGING_ENABLED
-        spdlog::info("ESP Performance: Avg={:.2f}ms, Min={:.2f}ms, Max={:.2f}ms, Entities: {}/{}", avgRenderTime, minRenderTime, maxRenderTime, renderedEntities, totalEntities);
-#endif
-        lastFrameMetricOutput = end;
-        frameCounter = 0;
-        maxRenderTime = 0.0f;
-        minRenderTime = 9999.0f;
-    }
-#ifdef ESP_LOGGING_ENABLED
-    if (renderTimeMs > 10.0f) {
-        spdlog::warn("ESP::Render: {:.2f} ms, Entities: {}/{}", renderTimeMs, renderedEntities, totalEntities);
-    }
-#endif
 }
