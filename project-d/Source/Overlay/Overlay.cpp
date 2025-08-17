@@ -58,7 +58,8 @@ static void DrawShadowRect(ImDrawList* dl, ImVec2 a, ImVec2 b, float rounding, I
             ((col >> 16) & 0xFF) / 255.0f,
             ImClamp(((col >> 24) & 0xFF) / 255.0f * powf(1.0f - alphaDecay, (float)i), 0.0f, 1.0f)
         ));
-        dl->AddRect(a - ImVec2(spread * t, spread * t), b + ImVec2(spread * t, spread * t), c, rounding + t, 0, 1.0f);
+        // Preserve provided rounding exactly. Do not increase per layer to avoid unintended curved corners at the top edge.
+        dl->AddRect(a - ImVec2(spread * t, spread * t), b + ImVec2(spread * t, spread * t), c, rounding, 0, 1.0f);
     }
 }
 
@@ -730,6 +731,10 @@ void Overlay::RenderMenu()
     }
 #endif
 
+    // Reduce default padding for this custom-drawn window to avoid gaps
+    // Force square window corners so content meets title bar with no rounded gap
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     ImGui::SetNextWindowSize(ImVec2(1220, 750), ImGuiCond_Always);
     ImGui::Begin("Aetherial", &shouldRenderMenu, ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
@@ -757,41 +762,67 @@ void Overlay::RenderMenu()
     auto mix = [](const ImVec4& a, const ImVec4& b, float t){ return ImVec4(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t, 1.0f); };
     ImVec4 leftCol = mix(baseBg, ImVec4(gAccent.x, gAccent.y, gAccent.z, 1.0f), 0.10f);
     ImVec4 rightCol = mix(baseBg, ImVec4(gAccent.x, gAccent.y, gAccent.z, 1.0f), 0.05f);
-    leftCol.x *= 0.80f; leftCol.y *= 0.80f; leftCol.z *= 0.80f;
-    rightCol.x *= 0.80f; rightCol.y *= 0.80f; rightCol.z *= 0.80f;
-    leftCol.x = ImMax(leftCol.x, kMin); leftCol.y = ImMax(leftCol.y, kMin); leftCol.z = ImMax(leftCol.z, kMin);
-    rightCol.x = ImMax(rightCol.x, kMin); rightCol.y = ImMax(rightCol.y, kMin); rightCol.z = ImMax(rightCol.z, kMin);
+    // Blend title ends slightly brighter to avoid dark corners left/right
+    leftCol.x = ImMax(leftCol.x + 0.02f, kMin);
+    leftCol.y = ImMax(leftCol.y + 0.02f, kMin);
+    leftCol.z = ImMax(leftCol.z + 0.02f, kMin);
+    rightCol.x = ImMax(rightCol.x + 0.02f, kMin);
+    rightCol.y = ImMax(rightCol.y + 0.02f, kMin);
+    rightCol.z = ImMax(rightCol.z + 0.02f, kMin);
+     // Avoid darkening below minimum brightness to keep area behind animation bar from looking like a gap
+     leftCol.x = ImMax(leftCol.x, kMin); leftCol.y = ImMax(leftCol.y, kMin); leftCol.z = ImMax(leftCol.z, kMin);
+     rightCol.x = ImMax(rightCol.x, kMin); rightCol.y = ImMax(rightCol.y, kMin); rightCol.z = ImMax(rightCol.z, kMin);
     ImU32 titleLeft = ImGui::ColorConvertFloat4ToU32(leftCol);
     ImU32 titleRight = ImGui::ColorConvertFloat4ToU32(rightCol);
 
     ImDrawList* dl = ImGui::GetWindowDrawList();
     dl->PushClipRect(winPos, winPos + winSize, false);
+    // Draw title bar without rounding on the bottom to meet content flush
     dl->AddRectFilledMultiColor(winPos, winPos + ImVec2(winSize.x, titleBarHeight), titleLeft, titleRight, titleRight, titleLeft);
-    dl->AddRect(winPos, winPos + ImVec2(winSize.x, titleBarHeight), titleLeft, rounding, ImDrawFlags_RoundCornersTop, 2.0f);
-    dl->AddRectFilled(winPos + ImVec2(0, titleBarHeight - 2), winPos + ImVec2(winSize.x, titleBarHeight + 8), ImGui::ColorConvertFloat4ToU32(ImVec4(0,0,0,0.22f)));
+    // Remove border rect to avoid darker left/right edges affecting animation area
 
+    // Ensure the accent zone backs the entire width directly under the title bar, above all child content
     {
-        float underlineY = winPos.y + titleBarHeight - 3.0f;
-        float underlineH = 2.0f;
-        dl->AddRectFilled(ImVec2(winPos.x, underlineY), ImVec2(winPos.x + winSize.x, underlineY + underlineH), ImGui::GetColorU32(ImVec4(0.20f, 0.22f, 0.26f, 1.0f)));
+        float bandY = winPos.y + titleBarHeight - 1.0f;
+        float bandH = 6.0f; // thin backing, stays behind tabs
+        // Draw on window draw list (already clipped to window) so children render on top
+        dl->AddRectFilled(ImVec2(winPos.x, bandY), ImVec2(winPos.x + winSize.x, bandY + bandH), ImGui::GetColorU32(ImVec4(0.10f, 0.10f, 0.11f, 1.0f)));
+    }
+
+    // Allow drawing a few pixels below the title bar for the underline/animation
+    dl->PushClipRect(winPos, winPos + ImVec2(winSize.x, titleBarHeight + 24.0f), false);
+    // Draw title bar without bottom rounding and slightly overpaint into content by 1px to seal seam
+    dl->AddRectFilledMultiColor(winPos, winPos + ImVec2(winSize.x, titleBarHeight + 1.0f), titleLeft, titleRight, titleRight, titleLeft);
+    {
+        // Position and thickness of the animated accent bar
+        float underlineY = winPos.y + titleBarHeight - 1.0f; // slightly lower
+        float underlineH = 8.0f; // thicker animated bar
+        // Single-pixel base line using a filled rect (cheaper than stroked line)
+        ImU32 ucol = ImGui::GetColorU32(ImVec4(ImMax(0.20f, kMin), ImMax(0.22f, kMin), ImMax(0.26f, kMin), 1.0f));
+        dl->AddRectFilled(ImVec2(winPos.x, underlineY + 1.0f), ImVec2(winPos.x + winSize.x, underlineY + 2.0f), ucol);
+
+        // Moving accent bar just at the bottom of the title bar
         float t = (float)ImGui::GetTime();
-        float segW = 160.0f;
+        float segW = ImMax(360.0f, winSize.x * 0.35f); // wider moving segment
         float speedBase = 140.0f;
         float wave = 1.0f + 0.25f * sinf(t * 1.6f);
         float speed = speedBase * wave;
         float x = fmodf(t * speed, winSize.x + segW) - segW;
         ImVec2 a = ImVec2(winPos.x + x, underlineY);
         ImVec2 b = ImVec2(winPos.x + x + segW, underlineY + underlineH);
-        dl->AddRectFilled(a, b, ImGui::GetColorU32(ImVec4(gAccent.x, gAccent.y, gAccent.z, 0.85f)));
+        // Soften animation edges: draw a small gradient at left/right ends to remove corner darkening perception
+        ImVec4 animL = ImVec4(gAccent.x, gAccent.y, gAccent.z, 0.85f);
+        ImVec4 animR = ImVec4(gAccent.x, gAccent.y, gAccent.z, 0.60f);
+        dl->AddRectFilledMultiColor(a, b, ImGui::GetColorU32(animL), ImGui::GetColorU32(animR), ImGui::GetColorU32(animR), ImGui::GetColorU32(animL));
+
+        // Hard fill the seam from the bottom of the title bar animation to the top of the tabs across the full window width
+        ImU32 seamBg = ImGui::GetColorU32(ImVec4(0.10f, 0.10f, 0.11f, 1.0f));
+        float seamTop = underlineY + underlineH;                 // start below animated bar so it stays visible
+        float seamBottom = winPos.y + titleBarHeight + 24.0f;   // extend deeper to be safe and avoid clipping
+        dl->AddRectFilled(ImVec2(winPos.x, seamTop), ImVec2(winPos.x + winSize.x, seamBottom), seamBg);
     }
 
-    // Filler under title bar to avoid blank/transparent band
-    {
-        ImVec4 fill = ImVec4(ImMax(baseBg.x, kMin), ImMax(baseBg.y, kMin), ImMax(baseBg.z, kMin), 1.0f);
-        ImU32 fillCol = ImGui::ColorConvertFloat4ToU32(fill);
-        float gapH = 6.0f; // small gap height
-        dl->AddRectFilled(ImVec2(winPos.x + 10, winPos.y + titleBarHeight), ImVec2(winPos.x + winSize.x - 10, winPos.y + titleBarHeight + gapH), fillCol, 0.0f);
-    }
+    // Remove additional filler band; content will meet the title bar flush
 
     dl->PopClipRect();
 
@@ -821,6 +852,8 @@ void Overlay::RenderMenu()
     ImGui::TextColored(ImVec4(0.95f, 0.96f, 0.98f, 1.00f), "%s", titleText);
     ImGui::PopFont();
 
+    // ensure no extra top padding between title bar and content
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY());
     float btnSize = 26.0f;
     float btnPadding = 8.0f;
     ImVec2 btnPosClose = winPos + ImVec2(winSize.x - btnPadding - btnSize, (titleBarHeight - btnSize) * 0.5f);
@@ -893,20 +926,36 @@ void Overlay::RenderMenu()
     dl->PopClipRect();
 
     // Reserve content space under title bar without leaving a blank stripe
-    ImGui::Dummy(ImVec2(0, titleBarHeight - ImMax(iconSize, textSize)));
+    // Align content so itstarts exactly after the drawn title bar
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + titleBarHeight - ImMax(iconSize, textSize) - 1.0f);
 
     // Sidebar and content panels
     static const char* tabIcons[] = { ICON_FA_CROSSHAIRS, ICON_FA_EYE, ICON_FA_COG, ICON_FA_INFO_CIRCLE };
     float footerHeight = 32.0f;
     float sidebarWidth = 220.0f;
     float sidebarHeight = winSize.y - titleBarHeight - footerHeight;
+    // Ensure child windows (Sidebar/MainContent) have no top rounding so they meet the title bar flush
+    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
     {
-        ImVec2 panelMin = winPos + ImVec2(10, titleBarHeight + 6); // tighter gap, filled above
-        ImVec2 panelMax = winPos + ImVec2(winSize.x - 10, winSize.y - 10);
+        // Paint a full-width underlay matching the panel background to cover areas outside the rounded panel (avoids dark strips near edges)
         ImU32 bg = ImGui::GetColorU32(ImVec4(0.10f, 0.10f, 0.11f, 1.0f));
-        DrawShadowRect(dl, panelMin, panelMax, 18.0f, ImGui::GetColorU32(ImVec4(0,0,0,0.20f)), 4, 4.0f, 0.35f);
-        dl->AddRectFilled(panelMin, panelMax, bg, 18.0f);
-        dl->AddRect(panelMin, panelMax, ImGui::GetColorU32(ImVec4(1,1,1,0.04f)), 18.0f);
+        ImVec2 underMin = winPos + ImVec2(0, titleBarHeight);
+        ImVec2 underMax = winPos + ImVec2(winSize.x, winSize.y - 10);
+        dl->AddRectFilled(underMin, underMax, bg, 0.0f);
+        // Bring main panel flush to the title bar and avoid top rounded corners leaving gaps
+        ImVec2 panelMin = winPos + ImVec2(10, titleBarHeight);
+        ImVec2 panelMax = winPos + ImVec2(winSize.x - 10, winSize.y - 10);
+        ImU32 bg2 = ImGui::GetColorU32(ImVec4(0.10f, 0.10f, 0.11f, 1.0f));
+        // Shadow without top rounding so it reaches edges under the title bar
+        dl->PushClipRect(ImVec2(winPos.x, panelMin.y), ImVec2(winPos.x + winSize.x, panelMax.y + 50.0f), true);
+        DrawShadowRect(dl, panelMin, panelMax, 0.0f, ImGui::GetColorU32(ImVec4(0,0,0,0.20f)), 4, 4.0f, 0.35f);
+        dl->PopClipRect();
+        // Draw panel with square top edge (no rounding) so it fully touches the title bar
+        dl->AddRectFilled(panelMin, panelMax, bg2, 0.0f);
+        // Square border as well
+        dl->PushClipRect(ImVec2(panelMin.x, panelMin.y + 1.0f), ImVec2(panelMax.x, panelMax.y), true);
+        dl->AddRect(panelMin, panelMax, ImGui::GetColorU32(ImVec4(1,1,1,0.04f)), 0.0f);
+        dl->PopClipRect();
     }
 
     ImGui::BeginChild("Sidebar", ImVec2(sidebarWidth, sidebarHeight), false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
@@ -957,24 +1006,47 @@ void Overlay::RenderMenu()
                 if (selMarkerY < 0.0f) selMarkerY = targetMarkerY; // first frame init
             }
 
-            // Background gradient card with rounded corners
-            ImU32 tabLeftCol = ImGui::ColorConvertFloat4ToU32(ImVec4(gAccent.x, gAccent.y, gAccent.z, 0.10f + 0.35f * tabAnim[i]));
-            ImU32 tabRightCol = ImGui::ColorConvertFloat4ToU32(ImVec4(gAccent.x, gAccent.y, gAccent.z, 0.05f + 0.18f * tabAnim[i]));
+            // Optional pulse factor for selected tab
+            float pulseT = 0.0f;
+            if (selected) pulseT = 0.5f * (sinf((float)ImGui::GetTime() * 2.2f) + 1.0f);
+
+            // Background gradient card with rounded corners (pulse alpha on selected)
+            float leftAlpha  = 0.10f + 0.35f * tabAnim[i];
+            float rightAlpha = 0.05f + 0.18f * tabAnim[i];
+            if (selected) {
+                float amp = 0.95f + 0.45f * pulseT; // 0.95..1.40 for visible pulse
+                leftAlpha  = ImClamp(leftAlpha * amp, 0.0f, 1.0f);
+                rightAlpha = ImClamp(rightAlpha * amp, 0.0f, 1.0f);
+            }
+            ImU32 tabLeftCol  = ImGui::ColorConvertFloat4ToU32(ImVec4(gAccent.x, gAccent.y, gAccent.z, leftAlpha));
+            ImU32 tabRightCol = ImGui::ColorConvertFloat4ToU32(ImVec4(gAccent.x, gAccent.y, gAccent.z, rightAlpha));
             wdl->AddRectFilledMultiColor(itemPos, itemPos + ImVec2(tabWidth, tabHeight), tabLeftCol, tabRightCol, tabRightCol, tabLeftCol);
+
+            // Add pulsing accent overlay across tab body for stronger effect
+            if (selected) {
+                float overlayAlpha = 0.08f + 0.18f * pulseT; // 0.08..0.26
+                ImU32 overlayCol = ImGui::GetColorU32(ImVec4(gAccent.x, gAccent.y, gAccent.z, overlayAlpha));
+                wdl->AddRectFilled(itemPos, itemPos + ImVec2(tabWidth, tabHeight), overlayCol, 10.0f);
+            }
+
             // Outer border subtle accent
             float outline = 1.0f + 1.5f * tabAnim[i];
             wdl->AddRect(itemPos, itemPos + ImVec2(tabWidth, tabHeight), ImGui::GetColorU32(ImVec4(gAccent.x, gAccent.y, gAccent.z, 0.40f + 0.35f * tabAnim[i])), 10.0f, 0, outline);
 
-            // Active tab animated shine sweep
-            if (selected && tabAnim[i] > 0.2f) {
-                float t = (float)ImGui::GetTime();
-                float sweepW = ImClamp(tabWidth * 0.35f, 80.0f, 160.0f);
-                float sx = fmodf(t * 220.0f, tabWidth + sweepW) - sweepW;
-                ImVec2 a = ImVec2(itemPos.x + sx, itemPos.y + 4.0f);
-                ImVec2 b = ImVec2(itemPos.x + sx + sweepW, itemPos.y + tabHeight - 4.0f);
-                ImU32 c1 = ImGui::GetColorU32(ImVec4(gAccent.x, gAccent.y, gAccent.z, 0.14f * tabAnim[i]));
-                ImU32 c2 = ImGui::GetColorU32(ImVec4(gAccent.x, gAccent.y, gAccent.z, 0.02f));
-                wdl->AddRectFilledMultiColor(a, b, c1, c2, c2, c1);
+            // Active tab pulsing effects
+            if (selected) {
+                // Inner pulsing border
+                float innerAlpha = 0.18f + 0.32f * pulseT; // 0.18..0.50
+                ImU32 pcol = ImGui::GetColorU32(ImVec4(gAccent.x, gAccent.y, gAccent.z, innerAlpha));
+                wdl->AddRect(itemPos + ImVec2(2, 2), itemPos + ImVec2(tabWidth - 2, tabHeight - 2), pcol, 8.0f, 0, 2.0f);
+                // Bottom breathing bar
+                float barH = 3.0f;
+                float barAlpha = 0.20f + 0.30f * pulseT; // 0.20..0.50
+                ImU32 barLeft  = ImGui::GetColorU32(ImVec4(gAccent.x, gAccent.y, gAccent.z, barAlpha));
+                ImU32 barRight = ImGui::GetColorU32(ImVec4(gAccent.x, gAccent.y, gAccent.z, barAlpha * 0.70f));
+                ImVec2 ba = ImVec2(itemPos.x + 10.0f, itemPos.y + tabHeight - barH - 3.0f);
+                ImVec2 bb = ImVec2(itemPos.x + tabWidth - 10.0f, itemPos.y + tabHeight - 3.0f);
+                wdl->AddRectFilledMultiColor(ba, bb, barLeft, barRight, barRight, barLeft);
             }
 
             // Icon + text with subtle hover/active motion
@@ -1014,19 +1086,22 @@ void Overlay::RenderMenu()
             float padY = 6.0f;
             float markerW = 6.0f;
             float corner = 4.0f;
+            // Pulse alpha for left selection pill
+            float pulseT = 0.5f * (sinf((float)ImGui::GetTime() * 2.2f) + 1.0f);
+            float pillAlpha = 0.78f + 0.20f * pulseT; // 0.78..0.98
             ImVec2 markerA = ImVec2(childPos.x + 6.0f, selMarkerY);
             ImVec2 markerB = ImVec2(childPos.x + 6.0f + markerW, selMarkerY + (tabHeight - 2 * padY));
-            ImU32 pillCol = ImGui::GetColorU32(ImVec4(gAccent.x, gAccent.y, gAccent.z, 0.90f));
+            ImU32 pillCol = ImGui::GetColorU32(ImVec4(gAccent.x, gAccent.y, gAccent.z, ImClamp(pillAlpha, 0.0f, 1.0f)));
             wdl->AddRectFilled(markerA, markerB, pillCol, corner);
-            DrawShadowRect(wdl, markerA, markerB, corner, ImGui::GetColorU32(ImVec4(gAccent.x, gAccent.y, gAccent.z, 0.25f)), 2, 3.0f, 0.55f);
+            DrawShadowRect(wdl, markerA, markerB, corner, ImGui::GetColorU32(ImVec4(gAccent.x, gAccent.y, gAccent.z, 0.22f)), 2, 3.0f, 0.55f);
         }
-        ImGui::PopFont();
     }
     ImGui::EndChild();
     ImGui::SameLine();
 
     // --- Main Content ---
     ImGui::BeginChild("MainContent", ImVec2(0, sidebarHeight), false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    ImGui::PopStyleVar(); // ChildRounding reset
     {
         ImGui::PushFont(featureFont);
 
@@ -1041,14 +1116,14 @@ void Overlay::RenderMenu()
               ImDrawList* sdl = ImGui::GetWindowDrawList();
               ImVec2 itemMin = ImGui::GetItemRectMin();
               ImVec2 itemMax = ImGui::GetItemRectMax();
-             float centerY = itemMin.y + (itemMax.y - itemMin.y) * 0.5f;
-             ImVec2 contentMin = ImGui::GetWindowPos() + ImGui::GetWindowContentRegionMin();
-             ImVec2 contentMax = ImGui::GetWindowPos() + ImGui::GetWindowContentRegionMax();
-             ImGuiStyle& st = ImGui::GetStyle();
-             float text_w = ImGui::CalcTextSize(label).x;
-             float padX = st.SeparatorTextPadding.x;
-             float avail_w = contentMax.x - contentMin.x;
-             float align = st.SeparatorTextAlign.x; // 0.0f=left, 0.5f=center
+              float centerY = itemMin.y + (itemMax.y - itemMin.y) * 0.5f;
+              ImVec2 contentMin = ImGui::GetWindowPos() + ImGui::GetWindowContentRegionMin();
+              ImVec2 contentMax = ImGui::GetWindowPos() + ImGui::GetWindowContentRegionMax();
+              ImGuiStyle& st = ImGui::GetStyle();
+              float text_w = ImGui::CalcTextSize(label).x;
+              float padX = st.SeparatorTextPadding.x;
+              float avail_w = contentMax.x - contentMin.x;
+              float align = st.SeparatorTextAlign.x; // 0.0f=left, 0.5f=center
               float label_start_x = contentMin.x + ((avail_w - text_w - padX * 2.0f) * align) + padX;
               float startX = label_start_x + text_w + 1.0f;
               float h = ImMax(1.0f, st.SeparatorTextBorderSize);
@@ -1142,8 +1217,7 @@ void Overlay::RenderMenu()
                                         currentPos = i;
                                         config.Visuals.WatermarkPos = static_cast<Structs::WatermarkPosition>(currentPos);
                                     }
-                                    if (selected)
-                                        ImGui::SetItemDefaultFocus();
+                                    if (selected) ImGui::SetItemDefaultFocus();
                                 }
                                 ImGui::EndCombo();
                             }
@@ -1171,7 +1245,7 @@ void Overlay::RenderMenu()
                             const char* modes[] = { "Bar", "Bar + Number", "Number Only" };
                             int cur = static_cast<int>(config.Visuals.HealthType);
                             ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
-                            ImGui::PushStyleColor(ImGuiCol_FrameBg,        ImVec4(0.18f, 0.18f, 0.18f, 1.00f));
+                            ImGui::PushStyleColor(ImGuiCol_FrameBg,        ImVec4(0.18f, 0.18f, 0.18f,  1.00f));
                             ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.22f, 0.22f, 0.22f, 1.00f));
                             ImGui::PushStyleColor(ImGuiCol_FrameBgActive,  ImVec4(0.24f, 0.24f, 0.24f, 1.00f));
                             ImGui::PushStyleColor(ImGuiCol_Border,         ImVec4(gAccent.x, gAccent.y, gAccent.z, 0.60f));
@@ -1297,30 +1371,28 @@ void Overlay::RenderMenu()
             if (ImAdd::Button("Load", ImVec2(buttonWidth, 0)))
             {
                 std::string filePath = "configs/" + std::string(configName);
-                if (!config.LoadFromFile(filePath)) { /* toasts below */ }
+                if (config.LoadFromFile(filePath)) { pushToast(std::string("Loaded ") + filePath, ToastType::Success); }
+                else { pushToast(std::string("Failed to load ") + filePath, ToastType::Error); }
             }
             ImGui::SameLine(0.0f, buttonSpacing);
             if (ImAdd::Button("Save", ImVec2(buttonWidth, 0)))
             {
                 std::string filePath = "configs/" + std::string(configName);
-                if (!config.SaveToFile(filePath)) { /* toasts below */ }
+                if (config.SaveToFile(filePath)) { pushToast(std::string("Saved ") + filePath, ToastType::Success); }
+                else { pushToast(std::string("Failed to save ") + filePath, ToastType::Error); }
             }
             ImGui::SameLine(0.0f, buttonSpacing);
             if (ImAdd::Button("Delete", ImVec2(buttonWidth, 0)))
             {
                 std::string filePath = "configs/" + std::string(configName);
-                if (!config.DeleteConfigFile(filePath)) { /* toasts below */ }
-                else { configFiles = config.ListConfigs("configs/"); }
+                if (config.DeleteConfigFile(filePath)) { pushToast(std::string("Deleted ") + filePath, ToastType::Success); configFiles = config.ListConfigs("configs/"); }
+                else { pushToast(std::string("Failed to delete ") + filePath, ToastType::Error); }
             }
             ImGui::SameLine(0.0f, buttonSpacing);
             if (ImAdd::Button("Import", ImVec2(buttonWidth, 0)))
             {
-                if (!config.LoadFromClipboard()) { /* toasts below */ }
-            }
-            ImGui::SameLine(0.0f, buttonSpacing);
-            if (ImAdd::Button("Unload", ImVec2(buttonWidth, 0)))
-            {
-                Globals::Running = false; shouldRun = false; ExitProcess(0);
+                if (config.LoadFromClipboard()) { pushToast("Imported config from clipboard", ToastType::Success); }
+                else { pushToast("Failed to import from clipboard", ToastType::Error); }
             }
         }
         else if (m_iSelectedPage == 3)
@@ -1349,41 +1421,54 @@ void Overlay::RenderMenu()
         if (config.Visuals.ToastsEnabled && !toasts.empty()) {
             auto now = std::chrono::steady_clock::now();
             ImDrawList* fdl = ImGui::GetForegroundDrawList();
+            ImGuiStyle& st = ImGui::GetStyle();
             float padding = 12.0f;
             float spacing = 8.0f;
-            ImVec2 base(Screen.x - padding, padding);
+            ImVec2 display = ImGui::GetIO().DisplaySize;
+            ImVec2 base(display.x - padding, padding);
             for (int i = (int)toasts.size() - 1, idx = 0; i >= 0; --i, ++idx) {
                 float remaining = std::chrono::duration<float>(toasts[i].expiry - now).count();
                 if (remaining <= 0.0f) { toasts.erase(toasts.begin() + i); continue; }
                 float alpha = remaining < 0.25f ? remaining / 0.25f : 1.0f;
-                ImVec4 bg = ImVec4(0.10f, 0.10f, 0.11f, 0.92f * alpha);
-                ImVec4 border;
+                // Theme accent
+                ImVec4 acc = gAccent;
+                ImVec4 textCol = ImVec4(acc.x, acc.y, acc.z, 1.0f * alpha);
+                ImVec4 border = ImVec4(acc.x, acc.y, acc.z, 1.0f * alpha);
+                // Full black background (0,0,0), keep alpha for fade
+                ImVec4 bg = ImVec4(0.0f, 0.0f, 0.0f, 0.94f * alpha);
                 const char* icon = ICON_FA_INFO_CIRCLE;
-                if (toasts[i].type == ToastType::Success) { border = ImVec4(0.25f, 0.75f, 0.35f, alpha); icon = ICON_FA_CHECK; }
-                else if (toasts[i].type == ToastType::Error) { border = ImVec4(0.95f, 0.35f, 0.35f, alpha); icon = ICON_FA_EXCLAMATION_TRIANGLE; }
-                else { border = ImVec4(gAccent.x, gAccent.y, gAccent.z, alpha); }
+                if (toasts[i].type == ToastType::Success) { icon = ICON_FA_CHECK; }
+                else if (toasts[i].type == ToastType::Error) { icon = ICON_FA_EXCLAMATION_TRIANGLE; }
                 ImVec2 textSz = ImGui::CalcTextSize(toasts[i].text.c_str());
                 float height = ImMax(36.0f, textSz.y + 14.0f);
                 float width = textSz.x + 56.0f;
                 ImVec2 bMin(base.x - width, base.y + idx * (height + spacing));
                 ImVec2 bMax(base.x, bMin.y + height);
+                // shadow
                 DrawShadowRect(fdl, bMin, bMax, 8.0f, ImGui::GetColorU32(ImVec4(0,0,0,0.35f * alpha)), 3, 3.5f, 0.45f);
+                // black background + accent border
                 fdl->AddRectFilled(bMin, bMax, ImGui::GetColorU32(bg), 8.0f);
                 fdl->AddRect(bMin, bMax, ImGui::GetColorU32(border), 8.0f, 0, 1.5f);
+                // icon + text in accent color
                 ImVec2 iconPos = ImVec2(bMin.x + 10.0f, bMin.y + (height - (iconFont ? iconFont->FontSize : 18.0f)) * 0.5f - 1.0f);
-                ImGui::PushFont(iconFont);
-                fdl->AddText(iconFont, iconFont ? iconFont->FontSize : 18.0f, iconPos, ImGui::GetColorU32(border), icon);
-                ImGui::PopFont();
+                if (iconFont) {
+                    ImGui::PushFont(iconFont);
+                    fdl->AddText(iconFont, iconFont->FontSize, iconPos, ImGui::GetColorU32(textCol), icon);
+                    ImGui::PopFont();
+                } else {
+                    fdl->AddText(iconPos, ImGui::GetColorU32(textCol), icon);
+                }
                 ImVec2 textPos = ImVec2(iconPos.x + 28.0f, bMin.y + (height - textSz.y) * 0.5f);
-                fdl->AddText(textPos, ImGui::GetColorU32(ImVec4(0.95f, 0.96f, 0.98f, alpha)), toasts[i].text.c_str());
+                fdl->AddText(textPos, ImGui::GetColorU32(textCol), toasts[i].text.c_str());
             }
         }
 
         ImGui::PopFont();
     }
     ImGui::End();
+    ImGui::PopStyleVar(); // WindowPadding
+    ImGui::PopStyleVar(); // WindowRounding
 }
-
 bool Overlay::Create()
 {
     shouldRun = true;
